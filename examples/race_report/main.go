@@ -1,7 +1,7 @@
-// Package main demonstrates the Phase 5 Task 5.1 race report formatting.
+// Package main demonstrates race report formatting.
 //
 // This example shows how race reports are formatted to match Go's official
-// race detector output (without stack traces, which will be added in Task 5.2).
+// race detector output format.
 package main
 
 import (
@@ -14,7 +14,7 @@ import (
 )
 
 func main() {
-	fmt.Println("=== Phase 5 Task 5.1: Race Report Formatting Demo ===")
+	fmt.Println("=== Race Report Formatting Demo ===")
 
 	// Initialize detector
 	d := detector.NewDetector()
@@ -36,5 +36,5 @@ func main() {
 
 	fmt.Println("\n=== Demo Complete ===")
 	fmt.Printf("Total races detected: %d\n", d.RacesDetected())
-	fmt.Println("\nNote: Stack traces will be added in Phase 5 Task 5.2")
+	fmt.Println("\nNote: This example demonstrates the basic race report format")
 }

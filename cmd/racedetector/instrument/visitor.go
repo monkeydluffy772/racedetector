@@ -55,9 +55,9 @@ func (s *InstrumentStats) TotalSkipped() int {
 // node types (assignments, dereferences, array accesses, struct fields).
 //
 // Strategy:
-// For MVP (Task A.2), we implement a simple approach that identifies memory
-// access nodes but does NOT modify the AST directly during traversal.
-// Instead, we collect instrumentation points and apply them in a second pass.
+// We implement a simple approach that identifies memory access nodes but
+// does NOT modify the AST directly during traversal. Instead, we collect
+// instrumentation points and apply them in a second pass.
 //
 // Why this approach:
 //  1. Modifying AST during traversal can cause iteration issues

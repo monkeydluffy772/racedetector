@@ -136,9 +136,8 @@ func raceread(addr uintptr) {
 	ctx := getCurrentContext()
 
 	// Extract program counter for the access.
-	// This will be used in Phase 7 for stack trace reporting.
-	// Currently collected but not used (MVP simplification).
-	_ = getcallerpc() // TODO Phase 7: Pass to OnRead for reporting
+	// Currently collected but not used in reports (planned for v0.2.0).
+	_ = getcallerpc() // TODO: Pass to OnRead for enhanced stack trace reporting
 
 	// Perform race detection check.
 	// This calls the FastTrack algorithm to detect read-write races.
@@ -179,7 +178,7 @@ func racewrite(addr uintptr) {
 	ctx := getCurrentContext()
 
 	// Extract program counter for the access.
-	_ = getcallerpc() // TODO Phase 7: Pass to OnWrite for reporting
+	_ = getcallerpc() // TODO: Pass to OnWrite for enhanced stack trace reporting
 
 	// Perform race detection check.
 	// This calls the FastTrack algorithm to detect write-write and read-write races.

@@ -18,7 +18,6 @@
 // as a drop-in replacement for `go build`, `go run`, and `go test` when
 // race detection is needed.
 //
-// Phase 6A - Task A.1: Project Structure Setup
 // This is the CLI entry point for the standalone race detector tool.
 package main
 
@@ -27,7 +26,7 @@ import (
 	"os"
 )
 
-const version = "0.1.0-alpha"
+const version = "0.1.0"
 
 func main() {
 	if len(os.Args) < 2 {
@@ -39,13 +38,10 @@ func main() {
 
 	switch command {
 	case "build":
-		// Task A.4: Implement build command
 		buildCommand(os.Args[2:])
 	case "run":
-		// Task A.5: Implement run command
 		runCommand(os.Args[2:])
 	case "test":
-		// Task A.6: Implement test command
 		testCommand(os.Args[2:])
 	case "version", "--version", "-v":
 		fmt.Printf("racedetector version %s\n", version)
@@ -100,26 +96,27 @@ ABOUT:
     inserting race detection calls and injecting the Pure-Go runtime.
 
 FOR MORE INFORMATION:
-    Repository: https://github.com/yourusername/racedetector
-    Documentation: https://github.com/yourusername/racedetector/blob/master/README.md
-    Issues: https://github.com/yourusername/racedetector/issues
+    Repository: https://github.com/kolkov/racedetector
+    Documentation: https://github.com/kolkov/racedetector/blob/main/README.md
+    Issues: https://github.com/kolkov/racedetector/issues
 
 `)
 }
 
-// buildCommand is implemented in build.go (Task A.4)
-// runCommand is implemented in run.go (Task A.5)
+// buildCommand is implemented in build.go
+// runCommand is implemented in run.go
 
 // testCommand implements the 'racedetector test' command.
 //
-// Task A.6: This will instrument and run tests with race detection enabled.
+// This will instrument and run tests with race detection enabled.
+// Currently not implemented - planned for v0.2.0.
 //
 // Example:
 //
 //	racedetector test -v ./internal/...
 func testCommand(_ []string) {
-	// TODO Task A.6: Implement test command (args unused until implemented)
+	// TODO: Implement test command in v0.2.0 (args unused until implemented)
 	fmt.Fprintln(os.Stderr, "Error: 'test' command not yet implemented")
-	fmt.Fprintln(os.Stderr, "This will be implemented in Task A.6")
+	fmt.Fprintln(os.Stderr, "This will be implemented in v0.2.0")
 	os.Exit(1)
 }

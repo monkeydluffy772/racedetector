@@ -8,6 +8,11 @@
 [![License](https://img.shields.io/github/license/kolkov/racedetector)](https://github.com/kolkov/racedetector/blob/main/LICENSE)
 [![GoDoc](https://pkg.go.dev/badge/github.com/kolkov/racedetector/race.svg)](https://pkg.go.dev/github.com/kolkov/racedetector/race)
 
+[![GitHub stars](https://img.shields.io/github/stars/kolkov/racedetector?style=social)](https://github.com/kolkov/racedetector/stargazers)
+[![GitHub forks](https://img.shields.io/github/forks/kolkov/racedetector?style=social)](https://github.com/kolkov/racedetector/network/members)
+[![GitHub watchers](https://img.shields.io/github/watchers/kolkov/racedetector?style=social)](https://github.com/kolkov/racedetector/watchers)
+[![GitHub discussions](https://img.shields.io/github/discussions/kolkov/racedetector)](https://github.com/kolkov/racedetector/discussions)
+
 > **Production-tested race detector** we're open-sourcing for the Go community.
 > Native Go implementation eliminating ThreadSanitizer C++ dependency.
 > **Works with `CGO_ENABLED=0`** - finally!
@@ -354,7 +359,7 @@ $ CGO_ENABLED=0 go build -race main.go  # Just works! ✅
 
 ### Precedent: Pure-Go HDF5
 
-We've seen this work before! Pure-Go HDF5 library proved that complex C library functionality can be reimplemented in pure Go successfully. If HDF5 (100K+ lines of C), why not race detector (ThreadSanitizer)?
+We've seen this work before! [Pure-Go HDF5 library](https://github.com/scigolib/hdf5) proved that complex C library functionality can be reimplemented in pure Go successfully. If HDF5 (100K+ lines of C), why not race detector (ThreadSanitizer)?
 
 ---
 
@@ -406,7 +411,7 @@ This project stands on the shoulders of giants:
 - Go team's 10+ years maintaining the race detector
 
 **Inspiration:**
-- Pure-Go HDF5 library - proved complex C libraries can be ported to pure Go
+- [Pure-Go HDF5 library](https://github.com/scigolib/hdf5) - proved complex C libraries can be ported to pure Go
 - 300+ developers who upvoted race detector improvement issues
 
 **Community:**
@@ -472,7 +477,7 @@ See [LICENSE](LICENSE) for full text.
 
 ---
 
-*"After successfully implementing Pure-Go HDF5, we knew Pure-Go race detection was possible. Now we're proving it."*
+*"After successfully implementing [Pure-Go HDF5](https://github.com/scigolib/hdf5), we knew Pure-Go race detection was possible. Now we're proving it."*
 
 **Status:** v0.1.0 Released - Production-Ready Standalone Tool
 **Community:** Let's get this into Go!

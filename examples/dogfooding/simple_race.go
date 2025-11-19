@@ -2,8 +2,6 @@
 //
 // This program contains an intentional data race that should be
 // detected when running with the racedetector tool.
-//
-// Phase 6A - Task A.7: Dogfooding Demo
 package main
 
 import (

@@ -1,4 +1,4 @@
-// Package main demonstrates Phase 5 Task 5.2 - Stack Trace Capture in race reports.
+// Package main demonstrates stack trace capture in race reports.
 //
 // This example shows how stack traces are captured and displayed in race reports,
 // matching Go's official race detector output format.
@@ -14,7 +14,7 @@ import (
 )
 
 func main() {
-	fmt.Println("=== Phase 5 Task 5.2: Stack Trace Capture Demo ===")
+	fmt.Println("=== Stack Trace Capture Demo ===")
 
 	// Simulate a realistic race scenario with function call chain
 	simulateRace()

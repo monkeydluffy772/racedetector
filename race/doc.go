@@ -63,10 +63,10 @@
 //
 // The Pure-Go race detector is designed for production use with minimal overhead:
 //
-//	Runtime overhead:  15-22% slowdown (competitive with ThreadSanitizer)
-//	Memory overhead:   Adaptive epoch/vector clock (64x memory savings)
+//	Runtime overhead:  5-15x slowdown (typical for race detection, v0.2.0 target: <10x)
+//	Memory overhead:   Adaptive epoch/vector clock representation
 //	Scalability:       Tested with 1000+ concurrent goroutines
-//	False positives:   <1% (skips constants, literals, built-ins)
+//	False positives:   Minimal (skips constants, literals, built-ins)
 //
 // # Compatibility
 //
@@ -95,8 +95,8 @@
 // https://users.soe.ucsc.edu/~cormac/papers/pldi09.pdf
 //
 // Installation guide:
-// https://github.com/kolkov/racedetector/blob/master/docs/INSTALLATION.md
+// https://github.com/kolkov/racedetector/blob/main/docs/INSTALLATION.md
 //
 // Usage guide:
-// https://github.com/kolkov/racedetector/blob/master/docs/USAGE_GUIDE.md
+// https://github.com/kolkov/racedetector/blob/main/docs/USAGE_GUIDE.md
 package race

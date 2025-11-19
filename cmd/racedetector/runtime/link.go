@@ -3,8 +3,6 @@
 // This package handles injecting our Pure-Go race detector runtime into
 // instrumented Go programs. It provides mechanisms to ensure the runtime
 // is linked and initialized properly.
-//
-// Phase 6A - Task A.3: Runtime Injection
 package runtime
 
 import (

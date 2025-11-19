@@ -155,7 +155,7 @@ func (d *Detector) OnWrite(addr uintptr, ctx *goroutine.RaceContext) {
 		if readClock != nil && !readClock.HappensBefore(ctx.C) {
 			// Report race with first conflicting read (use epoch representation for reporting).
 			// For simplicity, we report a synthetic epoch from the VectorClock.
-			// TODO Phase 5 Task 5.2: Improve race reporting to show all conflicting reads.
+			// TODO: Improve race reporting to show all conflicting reads in future version.
 			d.reportRaceV2("read-write", addr, epoch.Epoch(0), currentEpoch)
 			return // Stop on first race
 		}

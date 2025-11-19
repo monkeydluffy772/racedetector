@@ -1,7 +1,7 @@
 // Package main demonstrates runtime.Callers() for stack trace capture.
 //
-// This is research code for Phase 5 Task 5.2 to understand how to capture
-// and format stack traces for race reports.
+// This is research code to understand how to capture and format
+// stack traces for race reports.
 package main
 
 import (

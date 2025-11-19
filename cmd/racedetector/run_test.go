@@ -1,6 +1,4 @@
-// Package main implements the racedetector CLI tool.
-//
-// Phase 6A - Task A.5: 'racedetector run' Command Tests
+// run_test.go tests the 'racedetector run' command.
 package main
 
 import (

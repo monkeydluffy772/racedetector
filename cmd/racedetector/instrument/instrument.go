@@ -2,9 +2,8 @@
 // race detection call insertion.
 //
 // This package provides the core functionality for the racedetector standalone
-// tool (Phase 6A Task A.2). It parses Go source files, walks the AST to find
-// memory access operations, and inserts race.RaceRead() and race.RaceWrite()
-// calls automatically.
+// tool. It parses Go source files, walks the AST to find memory access
+// operations, and inserts race.RaceRead() and race.RaceWrite() calls automatically.
 //
 // Algorithm:
 //  1. Parse Go source file using go/parser
@@ -131,12 +130,6 @@ func InstrumentFile(filename string, src interface{}) (*InstrumentResult, error)
 	// Step 3: Walk the AST and instrument memory accesses.
 	// This traverses the entire AST, finds memory access nodes, and
 	// inserts race detection calls before each access.
-	//
-	// For MVP (Task A.2), we'll perform a simple pass that identifies
-	// target nodes. Full instrumentation (inserting calls) will be
-	// implemented in visitor.go.
-	//
-	// TODO Task A.2: Implement instrumentAST in visitor.go
 	visitor, err := instrumentAST(fset, file)
 	if err != nil {
 		return nil, fmt.Errorf("failed to instrument AST: %w", err)

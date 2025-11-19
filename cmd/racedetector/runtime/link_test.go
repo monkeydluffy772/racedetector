@@ -1,6 +1,4 @@
-// Package runtime provides runtime library linking for instrumented code.
-//
-// Phase 6A - Task A.3: Runtime Injection Tests
+// link_test.go tests runtime library injection.
 package runtime
 
 import (
