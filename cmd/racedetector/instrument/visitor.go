@@ -1,0 +1,913 @@
+// Package instrument - AST visitor for memory access detection.
+//
+// This file implements the core instrumentation logic using the visitor pattern
+// to walk the AST and insert race detection calls.
+package instrument
+
+import (
+	"go/ast"
+	"go/token"
+)
+
+// InstrumentStats tracks instrumentation statistics.
+//
+// This structure collects metrics during the instrumentation process,
+// providing visibility into what was instrumented and what was skipped.
+//
+// Use Case:
+// Enable with -v flag to see detailed instrumentation statistics:
+//
+//	racedetector build -v main.go
+//	Instrumented main.go:
+//	  - 15 writes instrumented
+//	  - 23 reads instrumented
+//	  - 5 items skipped (3 constants, 1 built-in, 1 literal)
+//	  Total: 38 race detection calls inserted
+//
+// Performance Impact:
+// Negligible - just integer increments during AST traversal.
+//
+// Thread Safety: NOT thread-safe (single-threaded instrumentation).
+//
+//nolint:revive // InstrumentStats is clear and descriptive despite stuttering
+type InstrumentStats struct {
+	ReadsInstrumented  int // Number of read operations instrumented
+	WritesInstrumented int // Number of write operations instrumented
+	ConstantsSkipped   int // Number of constants skipped (const declarations)
+	BuiltinsSkipped    int // Number of built-in identifiers skipped (nil, true, false, iota)
+	LiteralsSkipped    int // Number of literals skipped (42, "hello", 3.14)
+	BlanksSkipped      int // Number of blank identifiers (_) skipped
+}
+
+// Total returns total number of instrumented accesses.
+func (s *InstrumentStats) Total() int {
+	return s.ReadsInstrumented + s.WritesInstrumented
+}
+
+// TotalSkipped returns total number of skipped items.
+func (s *InstrumentStats) TotalSkipped() int {
+	return s.ConstantsSkipped + s.BuiltinsSkipped + s.LiteralsSkipped + s.BlanksSkipped
+}
+
+// instrumentVisitor implements ast.Visitor for instrumenting memory accesses.
+//
+// The visitor pattern allows us to traverse the AST and react to specific
+// node types (assignments, dereferences, array accesses, struct fields).
+//
+// Strategy:
+// For MVP (Task A.2), we implement a simple approach that identifies memory
+// access nodes but does NOT modify the AST directly during traversal.
+// Instead, we collect instrumentation points and apply them in a second pass.
+//
+// Why this approach:
+//  1. Modifying AST during traversal can cause iteration issues
+//  2. We need to insert statements BEFORE access statements
+//  3. Inserting nodes while walking can invalidate positions
+//
+// Two-Pass Algorithm:
+//
+//	Pass 1 (Visit): Identify all memory accesses, record their locations
+//	Pass 2 (Apply): Insert race detection calls at recorded locations
+//
+// Future Optimization (Phase 6B):
+// When integrating with Go compiler, we can leverage compiler's instrumentation
+// infrastructure which handles AST modification more elegantly.
+type instrumentVisitor struct {
+	// fset is the file set for source position information.
+	// Used for error messages and debugging.
+	fset *token.FileSet
+
+	// file is the AST file being instrumented.
+	file *ast.File
+
+	// instrumentationPoints records where to insert race calls.
+	// Key: ast.Node (the access node)
+	// Value: instrumentPoint (details about the instrumentation)
+	instrumentationPoints []instrumentPoint
+
+	// stats tracks instrumentation statistics.
+	// Exported via GetStats() for reporting.
+	stats InstrumentStats
+}
+
+// InstrumentPoint represents a location where race detection should be inserted.
+// Exported for testing purposes.
+//
+//nolint:revive // InstrumentPoint is a clear, descriptive name for this type
+type InstrumentPoint struct {
+	// Node is the AST node performing the memory access.
+	// Example: *ast.AssignStmt, *ast.UnaryExpr (dereference)
+	Node ast.Node
+
+	// AccessType indicates whether this is a read or write.
+	AccessType AccessType
+
+	// Addr is the expression representing the memory address.
+	// Example: &x, ptr, &arr[0], &obj.field
+	Addr ast.Expr
+}
+
+// AccessType classifies memory access operations.
+// Exported for testing purposes.
+type AccessType int
+
+const (
+	// AccessRead indicates a memory read operation.
+	AccessRead AccessType = iota
+	// AccessWrite indicates a memory write operation.
+	AccessWrite
+)
+
+// instrumentPoint is the internal type (lowercase for private use).
+type instrumentPoint = InstrumentPoint
+
+// Visit implements ast.Visitor interface.
+//
+// This method is called by ast.Walk() for each node in the AST.
+// We inspect the node type and record instrumentation points for
+// memory access operations.
+//
+// Nodes we care about (MVP scope):
+//  1. *ast.AssignStmt: Variable assignments (x = 42)
+//  2. *ast.UnaryExpr (MUL): Pointer dereferences (*ptr)
+//  3. *ast.IndexExpr: Array/slice accesses (arr[0])
+//  4. *ast.SelectorExpr: Struct field accesses (obj.field)
+//
+// Nodes we skip (for now):
+//   - Function calls: race detection happens inside callee
+//   - Constants: no memory access
+//   - Type declarations: no runtime access
+//
+// Parameters:
+//   - node: AST node being visited
+//
+// Returns:
+//   - ast.Visitor: Next visitor (self to continue, nil to stop)
+//
+// Algorithm:
+//
+//	For each node type, determine if it's a memory access.
+//	If yes, record an instrumentPoint with:
+//	  - The node itself
+//	  - Access type (read vs write)
+//	  - Address expression
+//
+// Thread Safety: NOT thread-safe (modifies instrumentationPoints).
+func (v *instrumentVisitor) Visit(node ast.Node) ast.Visitor {
+	if node == nil {
+		return nil
+	}
+
+	switch n := node.(type) {
+	case *ast.AssignStmt:
+		// Assignment: x = 42, *ptr = 42, arr[0] = 42
+		// These are WRITE operations on the left-hand side.
+		v.visitAssignment(n)
+
+	case *ast.UnaryExpr:
+		// Dereference: *ptr
+		// Can be either read or write depending on context.
+		// For MVP, we'll instrument as READ (simpler).
+		// Future: Context-aware detection (read vs write).
+		if n.Op == token.MUL {
+			v.visitDereference(n)
+		}
+
+	case *ast.IndexExpr:
+		// Array/slice access: arr[0], slice[i]
+		// Context determines read vs write.
+		// For MVP, we'll instrument as READ.
+		v.visitIndexAccess(n)
+
+	case *ast.SelectorExpr:
+		// Struct field access: obj.field, ptr.field
+		// Context determines read vs write.
+		// For MVP, we'll instrument as READ.
+		v.visitFieldAccess(n)
+	}
+
+	// Continue walking the AST.
+	return v
+}
+
+// visitAssignment handles assignment statements: x = 42, *ptr = 42, arr[0] = 42.
+//
+// Algorithm:
+//  1. For each right-hand side expression (RHS), record READ accesses
+//  2. For each left-hand side expression (LHS), record WRITE accesses
+//  3. Extract the address expression (&x, ptr, &arr[0], etc.)
+//  4. Add instrumentPoint to record
+//
+// Examples:
+//
+//	x = 42           → RaceWrite(&x)
+//	x = y            → RaceRead(&y), RaceWrite(&x)
+//	*ptr = 42        → RaceWrite(ptr)
+//	arr[0] = 42      → RaceWrite(&arr[0])
+//	obj.field = 42   → RaceWrite(&obj.field)
+//
+// Special case - variable declarations (x := y):
+//
+//	For ":=" assignments, LHS is being DECLARED, not modified.
+//	We only instrument RHS reads, not LHS writes.
+//	Example: val := counter  →  RaceRead(&counter), NO RaceWrite for val
+//
+// Multiple assignments (x, y = 1, 2) are handled by iterating Lhs/Rhs slices.
+//
+// Parameters:
+//   - stmt: Assignment statement node
+func (v *instrumentVisitor) visitAssignment(stmt *ast.AssignStmt) {
+	// First, instrument RHS reads (right side of =)
+	for _, rhs := range stmt.Rhs {
+		// Extract variables being READ from RHS
+		v.extractReads(rhs, stmt)
+	}
+
+	// Then, instrument LHS writes (left side of =)
+	// SKIP if this is := (variable declaration) - no write instrumentation needed
+	if stmt.Tok == token.DEFINE {
+		// This is :=, LHS is being declared, not written
+		// Example: val := counter
+		// We already instrumented counter read above, no need to instrument val
+		return
+	}
+
+	// For regular assignment (=), instrument LHS writes
+	for _, lhs := range stmt.Lhs {
+		// Skip if this expression shouldn't be instrumented
+		if !shouldInstrument(lhs) {
+			v.trackSkipped(lhs)
+			continue
+		}
+
+		// Extract address expression for this LHS.
+		addr := v.extractAddress(lhs)
+		if addr == nil {
+			// Skip if we can't extract address (e.g., blank identifier _)
+			continue
+		}
+
+		// Record instrumentation point.
+		v.instrumentationPoints = append(v.instrumentationPoints, InstrumentPoint{
+			Node:       stmt,
+			AccessType: AccessWrite,
+			Addr:       addr,
+		})
+		v.stats.WritesInstrumented++
+	}
+}
+
+// extractReads extracts read operations from an expression.
+//
+// This helper finds all variable/field/array reads in an expression
+// and records them for instrumentation.
+//
+// Examples:
+//
+//	counter        → RaceRead(&counter)
+//	x + y          → RaceRead(&x), RaceRead(&y)
+//	arr[i]         → RaceRead(&arr[i]), RaceRead(&i)
+//	obj.field      → RaceRead(&obj.field)
+//
+// Parameters:
+//   - expr: Expression to analyze
+//   - stmt: Parent statement (for instrumentation point)
+func (v *instrumentVisitor) extractReads(expr ast.Expr, stmt ast.Stmt) {
+	// Walk the expression and find all identifiers/selectors/indexes
+	ast.Inspect(expr, func(n ast.Node) bool {
+		switch e := n.(type) {
+		case *ast.Ident:
+			// Simple variable read: counter
+			// Skip if this expression shouldn't be instrumented
+			if !shouldInstrument(e) {
+				v.trackSkipped(e)
+				return true
+			}
+			// Create address expression
+			addr := &ast.UnaryExpr{Op: token.AND, X: e}
+			v.instrumentationPoints = append(v.instrumentationPoints, InstrumentPoint{
+				Node:       stmt,
+				AccessType: AccessRead,
+				Addr:       addr,
+			})
+			v.stats.ReadsInstrumented++
+
+		case *ast.SelectorExpr:
+			// Struct field read: obj.field (e.g., os.Args, person.Name)
+			// IMPORTANT: Return false to stop walking into children (X and Sel)
+			// Otherwise we'd instrument both &os.Args AND &os AND &Args separately!
+			if !shouldInstrument(e) {
+				v.trackSkipped(e)
+				return false // Don't walk into children
+			}
+			addr := &ast.UnaryExpr{Op: token.AND, X: e}
+			v.instrumentationPoints = append(v.instrumentationPoints, InstrumentPoint{
+				Node:       stmt,
+				AccessType: AccessRead,
+				Addr:       addr,
+			})
+			v.stats.ReadsInstrumented++
+			return false // Don't walk into X (os) and Sel (Args) separately
+
+		case *ast.IndexExpr:
+			// Array/slice read: arr[i]
+			if !shouldInstrument(e) {
+				v.trackSkipped(e)
+				return true
+			}
+			addr := &ast.UnaryExpr{Op: token.AND, X: e}
+			v.instrumentationPoints = append(v.instrumentationPoints, InstrumentPoint{
+				Node:       stmt,
+				AccessType: AccessRead,
+				Addr:       addr,
+			})
+			v.stats.ReadsInstrumented++
+
+		case *ast.UnaryExpr:
+			if e.Op == token.MUL {
+				// Pointer dereference: *ptr
+				if !shouldInstrument(e) {
+					v.trackSkipped(e)
+					return true
+				}
+				addr := e.X // ptr itself is the address
+				v.instrumentationPoints = append(v.instrumentationPoints, InstrumentPoint{
+					Node:       stmt,
+					AccessType: AccessRead,
+					Addr:       addr,
+				})
+				v.stats.ReadsInstrumented++
+			}
+		}
+		return true
+	})
+}
+
+// isBuiltinIdent returns true if the identifier is a built-in (no instrumentation needed).
+func isBuiltinIdent(name string) bool {
+	builtins := map[string]bool{
+		"nil":   true,
+		"true":  true,
+		"false": true,
+		"iota":  true,
+	}
+	return builtins[name]
+}
+
+// shouldInstrument determines if an expression should be instrumented.
+//
+// This function filters out expressions that don't need race detection:
+//   - Constants (const X = 42) - values never change at runtime
+//   - Built-in identifiers (nil, true, false, iota) - language-level constants
+//   - Literals (42, "hello", 3.14) - compile-time values
+//   - Blank identifier (_) - special identifier for discarding values
+//
+// Rationale:
+// Race conditions occur when multiple goroutines access the SAME memory
+// location and at least one access is a write. Constants and literals don't
+// occupy mutable memory, so they cannot participate in data races.
+//
+// Example:
+//
+//	const X = 42       // Never changes, skip instrumentation
+//	y := X + 1         // X read is safe (constant), y write needs instrumentation
+//	z := 42            // 42 is literal, skip instrumentation
+//	_ = z              // Blank identifier, skip instrumentation
+//
+// Performance Impact:
+// Reduces instrumentation overhead by eliminating unnecessary race calls
+// on constant values. Expected reduction: 5-15% of total instrumentation points.
+//
+// Parameters:
+//   - expr: Expression to check
+//
+// Returns:
+//   - bool: true if expression needs instrumentation, false otherwise
+//
+// Thread Safety: Read-only, safe for concurrent use.
+func shouldInstrument(expr ast.Expr) bool {
+	// Skip constants
+	if isConstant(expr) {
+		return false
+	}
+
+	// Skip built-in identifiers and blank identifier
+	if ident, ok := expr.(*ast.Ident); ok {
+		// Blank identifier _ (used to discard values)
+		if ident.Name == "_" {
+			return false
+		}
+		// Built-in identifiers (nil, true, false, iota)
+		if isBuiltinIdent(ident.Name) {
+			return false
+		}
+	}
+
+	// Skip literals
+	if isLiteral(expr) {
+		return false
+	}
+
+	return true
+}
+
+// trackSkipped tracks why an expression was skipped (for statistics).
+//
+// This helper method classifies skipped expressions and increments
+// the appropriate statistic counter.
+//
+// Parameters:
+//   - expr: Expression that was skipped
+//
+// Thread Safety: NOT thread-safe (modifies visitor stats).
+func (v *instrumentVisitor) trackSkipped(expr ast.Expr) {
+	if isConstant(expr) {
+		v.stats.ConstantsSkipped++
+		return
+	}
+
+	if ident, ok := expr.(*ast.Ident); ok {
+		if ident.Name == "_" {
+			v.stats.BlanksSkipped++
+			return
+		}
+		if isBuiltinIdent(ident.Name) {
+			v.stats.BuiltinsSkipped++
+			return
+		}
+	}
+
+	if isLiteral(expr) {
+		v.stats.LiteralsSkipped++
+		return
+	}
+}
+
+// isConstant checks if expression is a constant declared with 'const'.
+//
+// Go's type system tracks whether an identifier refers to a constant
+// via the Obj (object) field. Constants are declared with 'const' keyword
+// and their values are immutable.
+//
+// Example:
+//
+//	const X = 42        // isConstant(&ast.Ident{Name:"X"}) → true
+//	var Y = 42          // isConstant(&ast.Ident{Name:"Y"}) → false
+//
+// Limitations:
+// For MVP, we rely on ast.Ident.Obj.Kind == ast.Con. This works for
+// identifiers in the same file. Cross-package constants might not have
+// Obj populated (depends on type checking).
+//
+// Future Enhancement (Phase 6B):
+// Use go/types package for full type information and cross-package constants.
+//
+// Parameters:
+//   - expr: Expression to check
+//
+// Returns:
+//   - bool: true if expression is a declared constant
+//
+// Thread Safety: Read-only, safe for concurrent use.
+func isConstant(expr ast.Expr) bool {
+	// Check if it's an identifier declared as const
+	if ident, ok := expr.(*ast.Ident); ok {
+		if ident.Obj != nil && ident.Obj.Kind == ast.Con {
+			return true
+		}
+	}
+	return false
+}
+
+// isLiteral checks if expression is a literal value (compile-time constant).
+//
+// Literals are values written directly in code: numbers, strings, booleans, etc.
+// They are stored in the compiled binary's data section, not in mutable memory.
+//
+// Go defines literals in ast.BasicLit for most primitive types.
+//
+// Examples:
+//
+//	42          → *ast.BasicLit{Kind: token.INT}
+//	"hello"     → *ast.BasicLit{Kind: token.STRING}
+//	3.14        → *ast.BasicLit{Kind: token.FLOAT}
+//	true        → Handled by isBuiltinIdent (special case)
+//
+// Limitations:
+// Composite literals ([]int{1,2,3}, struct{}{}) are NOT BasicLit.
+// For MVP, we only handle basic literals. Composite literals will still
+// be instrumented (conservative approach).
+//
+// Future Enhancement:
+// Add *ast.CompositeLit detection if performance profiling shows benefit.
+//
+// Parameters:
+//   - expr: Expression to check
+//
+// Returns:
+//   - bool: true if expression is a literal value
+//
+// Thread Safety: Read-only, safe for concurrent use.
+func isLiteral(expr ast.Expr) bool {
+	switch expr.(type) {
+	case *ast.BasicLit: // Covers: int, float, string, char, imaginary literals
+		return true
+	}
+	return false
+}
+
+// visitDereference handles pointer dereferences: *ptr.
+//
+// Dereferences can be either reads or writes depending on context:
+//
+//	y := *ptr   → READ
+//	*ptr = 42   → WRITE
+//
+// For MVP, we'll conservatively instrument all dereferences as READS.
+// The WRITE case is handled separately in visitAssignment.
+//
+// Future Enhancement (Phase 6B):
+// Perform context analysis to determine read vs write accurately.
+//
+// Parameters:
+//   - expr: Unary expression node (dereference)
+func (v *instrumentVisitor) visitDereference(expr *ast.UnaryExpr) {
+	// The operand of * is the pointer being dereferenced.
+	// Example: *ptr → operand is ptr
+	addr := expr.X
+
+	// Record instrumentation point.
+	v.instrumentationPoints = append(v.instrumentationPoints, InstrumentPoint{
+		Node:       expr,
+		AccessType: AccessRead,
+		Addr:       addr,
+	})
+}
+
+// visitIndexAccess handles array/slice accesses: arr[0], slice[i].
+//
+// Similar to dereferences, index accesses can be reads or writes:
+//
+//	y := arr[0]   → READ
+//	arr[0] = 42   → WRITE
+//
+// For MVP, we'll instrument as READS. WRITE case handled in visitAssignment.
+//
+// Parameters:
+//   - expr: Index expression node
+func (v *instrumentVisitor) visitIndexAccess(expr *ast.IndexExpr) {
+	// Index access: arr[index]
+	// Address is &arr[index] conceptually, but we need arr base address.
+	// For simplicity, we'll use the entire IndexExpr as the address.
+	addr := expr
+
+	v.instrumentationPoints = append(v.instrumentationPoints, InstrumentPoint{
+		Node:       expr,
+		AccessType: AccessRead,
+		Addr:       addr,
+	})
+}
+
+// visitFieldAccess handles struct field accesses: obj.field.
+//
+// Field accesses can be reads or writes:
+//
+//	y := obj.field   → READ
+//	obj.field = 42   → WRITE
+//
+// For MVP, we'll instrument as READS. WRITE case handled in visitAssignment.
+//
+// Parameters:
+//   - expr: Selector expression node (struct field access)
+func (v *instrumentVisitor) visitFieldAccess(expr *ast.SelectorExpr) {
+	// Field access: obj.field
+	// Address is &obj.field
+	addr := expr
+
+	v.instrumentationPoints = append(v.instrumentationPoints, InstrumentPoint{
+		Node:       expr,
+		AccessType: AccessRead,
+		Addr:       addr,
+	})
+}
+
+// extractAddress extracts the address expression from an LHS expression.
+//
+// This helper converts different LHS forms into appropriate address expressions
+// for race detection calls.
+//
+// Transformations:
+//
+//	x           → &x
+//	*ptr        → ptr
+//	arr[0]      → &arr[0]
+//	obj.field   → &obj.field
+//	_           → nil (blank identifier, skip instrumentation)
+//
+// Parameters:
+//   - expr: Left-hand side expression
+//
+// Returns:
+//   - ast.Expr: Address expression, or nil if not instrumentable
+func (v *instrumentVisitor) extractAddress(expr ast.Expr) ast.Expr {
+	switch e := expr.(type) {
+	case *ast.Ident:
+		// Simple variable: x
+		// Address: &x
+		return &ast.UnaryExpr{
+			Op: token.AND,
+			X:  e,
+		}
+
+	case *ast.UnaryExpr:
+		if e.Op == token.MUL {
+			// Dereference: *ptr
+			// Address is ptr itself
+			return e.X
+		}
+
+	case *ast.IndexExpr:
+		// Array access: arr[0]
+		// Address: &arr[0]
+		return &ast.UnaryExpr{
+			Op: token.AND,
+			X:  e,
+		}
+
+	case *ast.SelectorExpr:
+		// Field access: obj.field
+		// Address: &obj.field
+		return &ast.UnaryExpr{
+			Op: token.AND,
+			X:  e,
+		}
+	}
+
+	// Unsupported expression type, skip instrumentation.
+	return nil
+}
+
+// newInstrumentVisitor creates a new instrumentVisitor instance.
+//
+// Parameters:
+//   - fset: File set for source positions
+//   - file: AST file to instrument
+//
+// Returns:
+//   - *instrumentVisitor: New visitor instance
+func newInstrumentVisitor(fset *token.FileSet, file *ast.File) *instrumentVisitor {
+	return &instrumentVisitor{
+		fset:                  fset,
+		file:                  file,
+		instrumentationPoints: make([]instrumentPoint, 0, 100), // Pre-allocate for typical file
+	}
+}
+
+// GetInstrumentationPoints returns the collected instrumentation points.
+//
+// This is exported for testing and debugging purposes. It allows tests
+// to verify that the visitor correctly identifies memory access operations
+// without requiring full AST modification implementation.
+//
+// Returns:
+//   - []instrumentPoint: List of instrumentation points collected during AST walk
+//
+// Thread Safety: NOT thread-safe (accesses visitor state).
+func (v *instrumentVisitor) GetInstrumentationPoints() []instrumentPoint {
+	return v.instrumentationPoints
+}
+
+// GetStats returns the collected instrumentation statistics.
+//
+// This is exported for reporting purposes. It allows the build command
+// to display detailed statistics about what was instrumented.
+//
+// Returns:
+//   - InstrumentStats: Statistics collected during AST walk
+//
+// Thread Safety: NOT thread-safe (accesses visitor state).
+func (v *instrumentVisitor) GetStats() InstrumentStats {
+	return v.stats
+}
+
+// ApplyInstrumentation inserts race detection calls into the AST.
+//
+// This function performs the second pass of instrumentation: it takes
+// the collected instrumentation points and modifies the AST to insert
+// race.RaceRead() or race.RaceWrite() calls BEFORE each memory access.
+//
+// Algorithm:
+//  1. For each instrumentation point, find its parent statement list
+//  2. Create a race detection call expression
+//  3. Insert the call BEFORE the original statement
+//  4. Handle special cases (assignments, expressions, etc.)
+//
+// Example Transformation:
+//
+//	// Original AST:
+//	counter = val + 1
+//
+//	// Instrumented AST:
+//	race.RaceWrite(uintptr(unsafe.Pointer(&counter)))
+//	counter = val + 1
+//
+// Parameters:
+//   - None (operates on v.instrumentationPoints)
+//
+// Returns:
+//   - error: Instrumentation error, or nil on success
+//
+// Thread Safety: NOT thread-safe (modifies AST in place).
+func (v *instrumentVisitor) ApplyInstrumentation() error {
+	// Group instrumentation points by parent statement.
+	// We need to insert race calls BEFORE the statement containing the access.
+	// Multiple accesses in one statement (e.g., x = y + z) need one call each.
+
+	// For MVP, we'll use a simple approach:
+	// Walk the AST again and insert calls directly into statement lists.
+
+	// Create a map of statements to instrument
+	stmtToPoints := make(map[ast.Stmt][]instrumentPoint)
+
+	// Find parent statements for each instrumentation point
+	for _, point := range v.instrumentationPoints {
+		stmt := v.findParentStatement(point.Node)
+		if stmt != nil {
+			stmtToPoints[stmt] = append(stmtToPoints[stmt], point)
+		}
+	}
+
+	// Now walk the AST and insert race calls
+	ast.Inspect(v.file, func(n ast.Node) bool {
+		// Look for statement lists (BlockStmt, CaseClause, etc.)
+		switch block := n.(type) {
+		case *ast.BlockStmt:
+			// Process statements in this block
+			newStmts := make([]ast.Stmt, 0, len(block.List)*2)
+			for _, stmt := range block.List {
+				// Check if this statement needs instrumentation
+				if points, ok := stmtToPoints[stmt]; ok {
+					// Insert race calls BEFORE this statement
+					for _, point := range points {
+						raceCall := v.createRaceCall(point)
+						if raceCall != nil {
+							newStmts = append(newStmts, raceCall)
+						}
+					}
+				}
+				// Keep original statement
+				newStmts = append(newStmts, stmt)
+			}
+			block.List = newStmts
+
+		case *ast.CaseClause:
+			// Handle switch/select case bodies
+			newStmts := make([]ast.Stmt, 0, len(block.Body)*2)
+			for _, stmt := range block.Body {
+				if points, ok := stmtToPoints[stmt]; ok {
+					for _, point := range points {
+						raceCall := v.createRaceCall(point)
+						if raceCall != nil {
+							newStmts = append(newStmts, raceCall)
+						}
+					}
+				}
+				newStmts = append(newStmts, stmt)
+			}
+			block.Body = newStmts
+
+		case *ast.CommClause:
+			// Handle select communication case bodies
+			newStmts := make([]ast.Stmt, 0, len(block.Body)*2)
+			for _, stmt := range block.Body {
+				if points, ok := stmtToPoints[stmt]; ok {
+					for _, point := range points {
+						raceCall := v.createRaceCall(point)
+						if raceCall != nil {
+							newStmts = append(newStmts, raceCall)
+						}
+					}
+				}
+				newStmts = append(newStmts, stmt)
+			}
+			block.Body = newStmts
+		}
+
+		return true
+	})
+
+	return nil
+}
+
+// findParentStatement finds the statement containing the given node.
+//
+// This helper walks up the AST from a node to find the enclosing statement.
+// This is needed because we insert race calls at statement level, not
+// expression level.
+//
+// Parameters:
+//   - node: AST node to find parent for
+//
+// Returns:
+//   - ast.Stmt: Parent statement, or nil if not found
+func (v *instrumentVisitor) findParentStatement(node ast.Node) ast.Stmt {
+	// For assignments, the node itself is the statement
+	if stmt, ok := node.(ast.Stmt); ok {
+		return stmt
+	}
+
+	// For expressions, we need to find the enclosing statement
+	// This is tricky without parent pointers, so we'll use a heuristic:
+	// Walk the AST and match nodes
+	var result ast.Stmt
+
+	ast.Inspect(v.file, func(n ast.Node) bool {
+		// Check if this is a statement containing our node
+		if stmt, ok := n.(ast.Stmt); ok {
+			// Check if our node is inside this statement
+			found := false
+			ast.Inspect(stmt, func(inner ast.Node) bool {
+				if inner == node {
+					found = true
+					return false
+				}
+				return true
+			})
+			if found {
+				result = stmt
+				return false // Found it, stop searching
+			}
+		}
+		return true
+	})
+
+	return result
+}
+
+// createRaceCall creates an AST node for a race detection call.
+//
+// This function generates an expression statement that calls race.RaceRead()
+// or race.RaceWrite() with the appropriate address.
+//
+// Generated Code:
+//   - race.RaceWrite(uintptr(unsafe.Pointer(&x)))
+//   - race.RaceRead(uintptr(unsafe.Pointer(&x)))
+//
+// Parameters:
+//   - point: Instrumentation point describing the access
+//
+// Returns:
+//   - ast.Stmt: Expression statement containing the race call
+func (v *instrumentVisitor) createRaceCall(point instrumentPoint) ast.Stmt {
+	// Determine function name based on access type
+	var funcName string
+	if point.AccessType == AccessWrite {
+		funcName = "RaceWrite"
+	} else {
+		funcName = "RaceRead"
+	}
+
+	// Create the call: race.RaceWrite(uintptr(unsafe.Pointer(&x)))
+	// Structure:
+	//   race.RaceWrite(
+	//     uintptr(
+	//       unsafe.Pointer(
+	//         &x
+	//       )
+	//     )
+	//   )
+
+	// Build from inside out:
+
+	// 1. Address expression: &x (point.Addr already contains this)
+	addrExpr := point.Addr
+
+	// 2. unsafe.Pointer(&x)
+	unsafePointerCall := &ast.CallExpr{
+		Fun: &ast.SelectorExpr{
+			X:   ast.NewIdent("unsafe"),
+			Sel: ast.NewIdent("Pointer"),
+		},
+		Args: []ast.Expr{addrExpr},
+	}
+
+	// 3. uintptr(unsafe.Pointer(&x))
+	uintptrConversion := &ast.CallExpr{
+		Fun:  ast.NewIdent("uintptr"),
+		Args: []ast.Expr{unsafePointerCall},
+	}
+
+	// 4. race.RaceWrite(...) or race.RaceRead(...)
+	raceCall := &ast.CallExpr{
+		Fun: &ast.SelectorExpr{
+			X:   ast.NewIdent(RacePackageAlias),
+			Sel: ast.NewIdent(funcName),
+		},
+		Args: []ast.Expr{uintptrConversion},
+	}
+
+	// 5. Wrap in expression statement
+	return &ast.ExprStmt{
+		X: raceCall,
+	}
+}

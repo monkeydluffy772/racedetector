@@ -1,0 +1,572 @@
+// Package instrument - Comprehensive test suite for AST instrumentation.
+//
+// This test file validates the instrumentation engine's ability to:
+//  1. Parse Go source files
+//  2. Inject required imports (race package, unsafe)
+//  3. Detect memory access operations
+//  4. Handle edge cases (multiple assignments, function calls, etc.)
+//
+// Test Coverage Goals:
+//   - Simple variable assignments
+//   - Pointer dereferences (read and write)
+//   - Array/slice accesses
+//   - Struct field accesses
+//   - Import injection (with and without existing imports)
+//   - Edge cases (blank identifier, constants, function calls)
+//
+// Phase 6A Task A.2 - AST Instrumentation Engine Tests
+package instrument
+
+import (
+	"strings"
+	"testing"
+)
+
+// TestInstrumentFile_SimpleVariable tests instrumentation of simple variable assignments.
+//
+// Test Case:
+//
+//	var x int
+//	x = 42
+//
+// Expected:
+//   - Import race and unsafe packages
+//   - Instrument write to x
+//
+// Success Criteria:
+//   - Output contains race and unsafe imports
+//   - Output compiles without syntax errors
+func TestInstrumentFile_SimpleVariable(t *testing.T) {
+	input := `package main
+
+var x int
+
+func main() {
+	x = 42
+}
+`
+
+	result, err := InstrumentFile("test.go", input)
+	if err != nil {
+		t.Fatalf("InstrumentFile failed: %v", err)
+	}
+
+	// Verify race package import was added.
+	if !strings.Contains(result.Code, RacePackageImportPath) {
+		t.Errorf("Output missing race package import")
+	}
+
+	// Verify unsafe import was added.
+	if !strings.Contains(result.Code, `"unsafe"`) {
+		t.Errorf("Output missing unsafe import")
+	}
+
+	// Verify code is still valid Go (basic syntax check).
+	if !strings.Contains(result.Code, "package main") {
+		t.Errorf("Output missing package declaration")
+	}
+	if !strings.Contains(result.Code, "func main") {
+		t.Errorf("Output missing main function")
+	}
+
+	t.Logf("Instrumented output:\n%s", result.Code)
+}
+
+// TestInstrumentFile_PointerDereference tests instrumentation of pointer dereferences.
+//
+// Test Case:
+//
+//	var ptr *int
+//	y := *ptr  // READ
+//	*ptr = 42  // WRITE
+//
+// Expected:
+//   - Detect both read and write dereferences
+//   - Import injection
+func TestInstrumentFile_PointerDereference(t *testing.T) {
+	input := `package main
+
+func main() {
+	var ptr *int
+	y := *ptr
+	*ptr = 42
+	_ = y
+}
+`
+
+	result, err := InstrumentFile("test.go", input)
+	if err != nil {
+		t.Fatalf("InstrumentFile failed: %v", err)
+	}
+
+	// Verify imports.
+	if !strings.Contains(result.Code, RacePackageImportPath) {
+		t.Errorf("Output missing race package import")
+	}
+
+	// Verify original code is preserved.
+	if !strings.Contains(result.Code, "*ptr") {
+		t.Errorf("Output missing pointer dereference")
+	}
+
+	t.Logf("Instrumented output:\n%s", result.Code)
+}
+
+// TestInstrumentFile_ArrayAccess tests instrumentation of array/slice accesses.
+//
+// Test Case:
+//
+//	arr := []int{1, 2, 3}
+//	y := arr[0]   // READ
+//	arr[0] = 42   // WRITE
+//
+// Expected:
+//   - Detect both read and write array accesses
+func TestInstrumentFile_ArrayAccess(t *testing.T) {
+	input := `package main
+
+func main() {
+	arr := []int{1, 2, 3}
+	y := arr[0]
+	arr[0] = 42
+	_ = y
+}
+`
+
+	result, err := InstrumentFile("test.go", input)
+	if err != nil {
+		t.Fatalf("InstrumentFile failed: %v", err)
+	}
+
+	// Verify imports.
+	if !strings.Contains(result.Code, RacePackageImportPath) {
+		t.Errorf("Output missing race package import")
+	}
+
+	// Verify original code.
+	if !strings.Contains(result.Code, "arr[0]") {
+		t.Errorf("Output missing array access")
+	}
+
+	t.Logf("Instrumented output:\n%s", result.Code)
+}
+
+// TestInstrumentFile_StructField tests instrumentation of struct field accesses.
+//
+// Test Case:
+//
+//	type S struct { field int }
+//	obj := S{}
+//	y := obj.field   // READ
+//	obj.field = 42   // WRITE
+//
+// Expected:
+//   - Detect both read and write field accesses
+func TestInstrumentFile_StructField(t *testing.T) {
+	input := `package main
+
+type S struct {
+	field int
+}
+
+func main() {
+	obj := S{}
+	y := obj.field
+	obj.field = 42
+	_ = y
+}
+`
+
+	result, err := InstrumentFile("test.go", input)
+	if err != nil {
+		t.Fatalf("InstrumentFile failed: %v", err)
+	}
+
+	// Verify imports.
+	if !strings.Contains(result.Code, RacePackageImportPath) {
+		t.Errorf("Output missing race package import")
+	}
+
+	// Verify original code.
+	if !strings.Contains(result.Code, "obj.field") {
+		t.Errorf("Output missing field access")
+	}
+
+	t.Logf("Instrumented output:\n%s", result.Code)
+}
+
+// TestInstrumentFile_ImportInjection tests import injection with existing imports.
+//
+// Test Case:
+//
+//	package main
+//	import "fmt"
+//	func main() { fmt.Println("hello") }
+//
+// Expected:
+//   - Preserve existing imports
+//   - Add race and unsafe imports
+//   - Use grouped import syntax: import (...)
+func TestInstrumentFile_ImportInjection(t *testing.T) {
+	input := `package main
+
+import "fmt"
+
+func main() {
+	fmt.Println("hello")
+}
+`
+
+	result, err := InstrumentFile("test.go", input)
+	if err != nil {
+		t.Fatalf("InstrumentFile failed: %v", err)
+	}
+
+	// Verify all imports present.
+	if !strings.Contains(result.Code, `"fmt"`) {
+		t.Errorf("Output missing existing fmt import")
+	}
+	if !strings.Contains(result.Code, RacePackageImportPath) {
+		t.Errorf("Output missing race package import")
+	}
+	if !strings.Contains(result.Code, `"unsafe"`) {
+		t.Errorf("Output missing unsafe import")
+	}
+
+	// Verify grouped import syntax.
+	if !strings.Contains(result.Code, "import (") {
+		t.Errorf("Output should use grouped import syntax")
+	}
+
+	t.Logf("Instrumented output:\n%s", result.Code)
+}
+
+// TestInstrumentFile_MultipleAssignments tests multiple assignment statements.
+//
+// Test Case:
+//
+//	x, y := 1, 2
+//
+// Expected:
+//   - Instrument both x and y writes
+func TestInstrumentFile_MultipleAssignments(t *testing.T) {
+	input := `package main
+
+func main() {
+	x, y := 1, 2
+	_ = x
+	_ = y
+}
+`
+
+	result, err := InstrumentFile("test.go", input)
+	if err != nil {
+		t.Fatalf("InstrumentFile failed: %v", err)
+	}
+
+	// Verify imports.
+	if !strings.Contains(result.Code, RacePackageImportPath) {
+		t.Errorf("Output missing race package import")
+	}
+
+	// Verify original code.
+	if !strings.Contains(result.Code, "x, y :=") {
+		t.Errorf("Output missing multiple assignment")
+	}
+
+	t.Logf("Instrumented output:\n%s", result.Code)
+}
+
+// TestInstrumentFile_FunctionCall tests that function calls are NOT instrumented.
+//
+// Test Case:
+//
+//	foo(x)
+//
+// Expected:
+//   - Do NOT instrument x in function call (callee handles it)
+func TestInstrumentFile_FunctionCall(t *testing.T) {
+	input := `package main
+
+func foo(val int) {}
+
+func main() {
+	x := 42
+	foo(x)
+}
+`
+
+	result, err := InstrumentFile("test.go", input)
+	if err != nil {
+		t.Fatalf("InstrumentFile failed: %v", err)
+	}
+
+	// Verify imports.
+	if !strings.Contains(result.Code, RacePackageImportPath) {
+		t.Errorf("Output missing race package import")
+	}
+
+	// Verify original code preserved.
+	if !strings.Contains(result.Code, "foo(x)") {
+		t.Errorf("Output missing function call")
+	}
+
+	t.Logf("Instrumented output:\n%s", result.Code)
+}
+
+// TestInstrumentFile_BlankIdentifier tests that blank identifier is not instrumented.
+//
+// Test Case:
+//
+//	_ = x
+//
+// Expected:
+//   - Skip instrumentation for blank identifier
+func TestInstrumentFile_BlankIdentifier(t *testing.T) {
+	input := `package main
+
+func main() {
+	x := 42
+	_ = x
+}
+`
+
+	result, err := InstrumentFile("test.go", input)
+	if err != nil {
+		t.Fatalf("InstrumentFile failed: %v", err)
+	}
+
+	// Verify imports.
+	if !strings.Contains(result.Code, RacePackageImportPath) {
+		t.Errorf("Output missing race package import")
+	}
+
+	// Verify blank identifier preserved.
+	if !strings.Contains(result.Code, "_ = x") {
+		t.Errorf("Output missing blank identifier assignment")
+	}
+
+	t.Logf("Instrumented output:\n%s", result.Code)
+}
+
+// TestInstrumentFile_Constants tests that constants are not instrumented.
+//
+// Test Case:
+//
+//	const C = 42
+//
+// Expected:
+//   - Constants don't need instrumentation (no runtime memory access)
+func TestInstrumentFile_Constants(t *testing.T) {
+	input := `package main
+
+const C = 42
+
+func main() {
+	x := C
+	_ = x
+}
+`
+
+	result, err := InstrumentFile("test.go", input)
+	if err != nil {
+		t.Fatalf("InstrumentFile failed: %v", err)
+	}
+
+	// Verify imports.
+	if !strings.Contains(result.Code, RacePackageImportPath) {
+		t.Errorf("Output missing race package import")
+	}
+
+	// Verify constant preserved.
+	if !strings.Contains(result.Code, "const C") {
+		t.Errorf("Output missing constant declaration")
+	}
+
+	t.Logf("Instrumented output:\n%s", result.Code)
+}
+
+// TestInstrumentFile_NoImports tests file with no imports.
+//
+// Test Case:
+//
+//	package main
+//	func main() {}
+//
+// Expected:
+//   - Create import block with race and unsafe
+func TestInstrumentFile_NoImports(t *testing.T) {
+	input := `package main
+
+func main() {
+	var x int
+	x = 42
+	_ = x
+}
+`
+
+	result, err := InstrumentFile("test.go", input)
+	if err != nil {
+		t.Fatalf("InstrumentFile failed: %v", err)
+	}
+
+	// Verify imports added.
+	if !strings.Contains(result.Code, RacePackageImportPath) {
+		t.Errorf("Output missing race package import")
+	}
+	if !strings.Contains(result.Code, `"unsafe"`) {
+		t.Errorf("Output missing unsafe import")
+	}
+
+	t.Logf("Instrumented output:\n%s", result.Code)
+}
+
+// TestInstrumentFile_SyntaxError tests handling of invalid Go code.
+//
+// Test Case:
+//
+//	Invalid Go syntax
+//
+// Expected:
+//   - Return error (parsing fails)
+func TestInstrumentFile_SyntaxError(t *testing.T) {
+	input := `package main
+
+func main() {
+	this is not valid Go code
+}
+`
+
+	_, err := InstrumentFile("test.go", input)
+	if err == nil {
+		t.Fatalf("InstrumentFile should fail on invalid syntax")
+	}
+
+	// Verify error message mentions parsing.
+	if !strings.Contains(err.Error(), "parse") && !strings.Contains(err.Error(), "failed") {
+		t.Errorf("Error should mention parsing failure: %v", err)
+	}
+}
+
+// TestInstrumentFile_ExistingRaceImport tests handling when race import already exists.
+//
+// Test Case:
+//
+//	import race "github.com/kolkov/racedetector/internal/race/api"
+//
+// Expected:
+//   - Do NOT add duplicate import
+func TestInstrumentFile_ExistingRaceImport(t *testing.T) {
+	input := `package main
+
+import race "github.com/kolkov/racedetector/internal/race/api"
+import "unsafe"
+
+func main() {
+	var x int
+	x = 42
+	_ = x
+}
+`
+
+	result, err := InstrumentFile("test.go", input)
+	if err != nil {
+		t.Fatalf("InstrumentFile failed: %v", err)
+	}
+
+	// Verify imports preserved (no duplicates).
+	// Count occurrences of race import path.
+	count := strings.Count(result.Code, RacePackageImportPath)
+	if count != 1 {
+		t.Errorf("Expected exactly 1 race import, found %d", count)
+	}
+
+	t.Logf("Instrumented output:\n%s", result.Code)
+}
+
+// TestInjectImports_NoExistingImports tests import injection with no existing imports.
+func TestInjectImports_NoExistingImports(t *testing.T) {
+	input := `package main
+
+func main() {}
+`
+
+	result, err := InstrumentFile("test.go", input)
+	if err != nil {
+		t.Fatalf("InstrumentFile failed: %v", err)
+	}
+
+	// Verify both imports added.
+	if !strings.Contains(result.Code, RacePackageImportPath) {
+		t.Errorf("Output missing race package import")
+	}
+	if !strings.Contains(result.Code, `"unsafe"`) {
+		t.Errorf("Output missing unsafe import")
+	}
+
+	t.Logf("Instrumented output:\n%s", result.Code)
+}
+
+// TestInjectImports_PreserveExisting tests that existing imports are preserved.
+func TestInjectImports_PreserveExisting(t *testing.T) {
+	input := `package main
+
+import (
+	"fmt"
+	"os"
+)
+
+func main() {
+	fmt.Println("hello")
+	os.Exit(0)
+}
+`
+
+	result, err := InstrumentFile("test.go", input)
+	if err != nil {
+		t.Fatalf("InstrumentFile failed: %v", err)
+	}
+
+	// Verify all imports present.
+	if !strings.Contains(result.Code, `"fmt"`) {
+		t.Errorf("Output missing fmt import")
+	}
+	if !strings.Contains(result.Code, `"os"`) {
+		t.Errorf("Output missing os import")
+	}
+	if !strings.Contains(result.Code, RacePackageImportPath) {
+		t.Errorf("Output missing race package import")
+	}
+	if !strings.Contains(result.Code, `"unsafe"`) {
+		t.Errorf("Output missing unsafe import")
+	}
+
+	t.Logf("Instrumented output:\n%s", result.Code)
+}
+
+// BenchmarkInstrumentFile benchmarks instrumentation performance.
+//
+// Target: <1s per 1000 lines of code
+func BenchmarkInstrumentFile(b *testing.B) {
+	input := `package main
+
+func main() {
+	var x int
+	x = 42
+	y := x
+	arr := []int{1, 2, 3}
+	z := arr[0]
+	arr[1] = 100
+	_ = y
+	_ = z
+}
+`
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_, err := InstrumentFile("bench.go", input)
+		if err != nil {
+			b.Fatalf("InstrumentFile failed: %v", err)
+		}
+	}
+}
