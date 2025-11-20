@@ -9,6 +9,7 @@ import (
 	"github.com/kolkov/racedetector/internal/race/epoch"
 	"github.com/kolkov/racedetector/internal/race/goroutine"
 	"github.com/kolkov/racedetector/internal/race/shadowmem"
+	"github.com/kolkov/racedetector/internal/race/stackdepot"
 	"github.com/kolkov/racedetector/internal/race/syncshadow"
 )
 
@@ -222,6 +223,9 @@ func (d *Detector) OnWrite(addr uintptr, ctx *goroutine.RaceContext) {
 	// If we're writing to the same location in the same epoch, no race possible.
 	// This handles 71% of writes according to FastTrack paper.
 	if vs.W.Same(currentEpoch) {
+		// Capture stack even on fast path (for potential future races).
+		stackHash := stackdepot.CaptureStack()
+		vs.SetWriteStack(stackHash)
 		return
 	}
 
@@ -242,6 +246,9 @@ func (d *Detector) OnWrite(addr uintptr, ctx *goroutine.RaceContext) {
 				// FAST PATH (skip ALL HB checks!)
 				vs.W = currentEpoch
 				vs.IncrementWriteCount()
+				// Capture stack (v0.2.0 Task 6).
+				stackHash := stackdepot.CaptureStack()
+				vs.SetWriteStack(stackHash)
 				ctx.IncrementClock()
 				return
 			}
@@ -252,6 +259,9 @@ func (d *Detector) OnWrite(addr uintptr, ctx *goroutine.RaceContext) {
 			// No previous write - FAST PATH.
 			vs.W = currentEpoch
 			vs.IncrementWriteCount()
+			// Capture stack (v0.2.0 Task 6).
+			stackHash := stackdepot.CaptureStack()
+			vs.SetWriteStack(stackHash)
 			ctx.IncrementClock()
 			return
 		}
@@ -267,6 +277,9 @@ func (d *Detector) OnWrite(addr uintptr, ctx *goroutine.RaceContext) {
 			vs.SetExclusiveWriter(currentTID)
 			vs.W = currentEpoch
 			vs.IncrementWriteCount()
+			// Capture stack (v0.2.0 Task 6).
+			stackHash := stackdepot.CaptureStack()
+			vs.SetWriteStack(stackHash)
 			ctx.IncrementClock()
 			return
 		}
@@ -290,7 +303,7 @@ func (d *Detector) OnWrite(addr uintptr, ctx *goroutine.RaceContext) {
 	// Step 5: Check write-write race.
 	// A race occurs if the previous write did NOT happen-before the current write.
 	if !d.happensBeforeWrite(vs.W, ctx) {
-		d.reportRaceV2("write-write", addr, vs.W, currentEpoch)
+		d.reportRaceV2("write-write", addr, vs, vs.W, currentEpoch)
 		return // Stop on first race to avoid cascade of reports
 	}
 
@@ -299,7 +312,7 @@ func (d *Detector) OnWrite(addr uintptr, ctx *goroutine.RaceContext) {
 		// FAST PATH: Check single reader epoch.
 		readEpoch := vs.GetReadEpoch()
 		if readEpoch != 0 && !d.happensBeforeRead(readEpoch, ctx) {
-			d.reportRaceV2("read-write", addr, readEpoch, currentEpoch)
+			d.reportRaceV2("read-write", addr, vs, readEpoch, currentEpoch)
 			return // Stop on first race
 		}
 	} else {
@@ -309,7 +322,7 @@ func (d *Detector) OnWrite(addr uintptr, ctx *goroutine.RaceContext) {
 			// Report race with first conflicting read (use epoch representation for reporting).
 			// For simplicity, we report a synthetic epoch from the VectorClock.
 			// TODO: Improve race reporting to show all conflicting reads in future version.
-			d.reportRaceV2("read-write", addr, epoch.Epoch(0), currentEpoch)
+			d.reportRaceV2("read-write", addr, vs, epoch.Epoch(0), currentEpoch)
 			return // Stop on first race
 		}
 	}
@@ -318,6 +331,12 @@ func (d *Detector) OnWrite(addr uintptr, ctx *goroutine.RaceContext) {
 	// Record that this write occurred at currentEpoch.
 	vs.W = currentEpoch
 	vs.IncrementWriteCount()
+
+	// Step 7.1: Capture stack trace for this write (v0.2.0 Task 6).
+	// This enables complete race reports showing where previous write occurred.
+	// Performance: ~500ns per write (acceptable for production debugging).
+	stackHash := stackdepot.CaptureStack()
+	vs.SetWriteStack(stackHash)
 
 	// Step 8: Clear read tracking and DEMOTE back to fast path.
 	// Write dominates all previous reads, so we reset read state.
@@ -415,7 +434,7 @@ func (d *Detector) OnRead(addr uintptr, ctx *goroutine.RaceContext) {
 	// A race occurs if there was a write that did NOT happen-before this read.
 	// vs.W == 0 means no previous write, so skip check.
 	if vs.W != 0 && !d.happensBeforeWrite(vs.W, ctx) {
-		d.reportRaceV2("write-read", addr, vs.W, currentEpoch)
+		d.reportRaceV2("write-read", addr, vs, vs.W, currentEpoch)
 		return // Stop on first race to avoid cascade of reports
 	}
 
@@ -479,6 +498,12 @@ func (d *Detector) OnRead(addr uintptr, ctx *goroutine.RaceContext) {
 	d.mu.Unlock()
 
 	vs.GetReadClock().Join(ctx.C)
+
+	// Capture stack for read-shared variables (v0.2.0 Task 6).
+	// This enables complete race reports for read-write races on shared data.
+	stackHash := stackdepot.CaptureStack()
+	vs.SetReadStack(stackHash)
+
 	ctx.IncrementClock()
 }
 

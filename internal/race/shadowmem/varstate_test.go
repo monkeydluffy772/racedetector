@@ -11,17 +11,17 @@ import (
 // Phase 3: 24 bytes (W + mu + readEpoch + readClock pointer).
 // v0.2.0 Task 3 (SmartTrack): 40 bytes (adds exclusiveWriter int64 + writeCount uint32 + padding).
 // v0.2.0 Task 4 (64-bit Epoch): 48 bytes (W changed from uint32 to uint64, adds 8 bytes).
-// This is larger than Task 3 (40 bytes) due to 64-bit Epoch support.
-// Trade-off: +8 bytes per VarState for 48-bit clock support (281T operations vs 16M).
+// v0.2.0 Task 6 (Stack Depot): 64 bytes (adds writeStackHash uint64 + readStackHash uint64).
+// Trade-off: 64 bytes per VarState for complete race reports with both stacks.
 func TestVarStateSize(t *testing.T) {
-	const expectedSize = 48 // W(8) + mu(8) + readEpoch(8) + readClock(8) + exclusiveWriter(8) + writeCount(4) + padding(4)
+	const expectedSize = 64 // W(8) + mu(8) + readEpoch(8) + readClock(8) + exclusiveWriter(8) + writeCount(4) + padding(4) + writeStackHash(8) + readStackHash(8)
 	actualSize := unsafe.Sizeof(VarState{})
 
 	if actualSize != expectedSize {
-		t.Errorf("VarState size = %d bytes, want %d bytes (W + mu + readEpoch + pointer + ownership fields)", actualSize, expectedSize)
+		t.Errorf("VarState size = %d bytes, want %d bytes (W + mu + readEpoch + pointer + ownership + stack hashes)", actualSize, expectedSize)
 	}
 
-	t.Logf("VarState size: %d bytes (64-bit Epoch + adaptive representation + race-safe + SmartTrack ownership)", actualSize)
+	t.Logf("VarState size: %d bytes (64-bit Epoch + adaptive representation + race-safe + SmartTrack ownership + Stack Depot)", actualSize)
 }
 
 // TestVarStateNewZero verifies that NewVarState creates a zero-initialized state.

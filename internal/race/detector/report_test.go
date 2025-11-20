@@ -237,7 +237,8 @@ func TestDetector_reportRaceV2(t *testing.T) {
 	}
 
 	// Report a race (output goes to stderr, we won't capture it here).
-	d.reportRaceV2("write-write", addr, prevEpoch, currEpoch)
+	// Pass nil for VarState in tests (previous stack won't be shown).
+	d.reportRaceV2("write-write", addr, nil, prevEpoch, currEpoch)
 
 	// Check counter incremented.
 	finalCount := d.RacesDetected()
@@ -246,7 +247,7 @@ func TestDetector_reportRaceV2(t *testing.T) {
 	}
 
 	// Report another race.
-	d.reportRaceV2("read-write", addr+8, epoch.NewEpoch(3, 15), epoch.NewEpoch(4, 20))
+	d.reportRaceV2("read-write", addr+8, nil, epoch.NewEpoch(3, 15), epoch.NewEpoch(4, 20))
 
 	finalCount = d.RacesDetected()
 	if finalCount != 2 {
@@ -427,7 +428,7 @@ func TestDetector_Deduplication_FirstRaceReported(t *testing.T) {
 		t.Fatalf("Initial race count = %d, want 0", initialCount)
 	}
 
-	d.reportRaceV2("write-write", addr, prevEpoch, currEpoch)
+	d.reportRaceV2("write-write", addr, nil, prevEpoch, currEpoch)
 
 	finalCount := d.RacesDetected()
 	if finalCount != 1 {
@@ -445,8 +446,8 @@ func TestDetector_Deduplication_DuplicateRaceSkipped(t *testing.T) {
 	currEpoch := epoch.NewEpoch(2, 10)
 
 	// Report the same race twice.
-	d.reportRaceV2("write-write", addr, prevEpoch, currEpoch)
-	d.reportRaceV2("write-write", addr, prevEpoch, currEpoch)
+	d.reportRaceV2("write-write", addr, nil, prevEpoch, currEpoch)
+	d.reportRaceV2("write-write", addr, nil, prevEpoch, currEpoch)
 
 	// Only first race should be counted.
 	finalCount := d.RacesDetected()
@@ -466,8 +467,8 @@ func TestDetector_Deduplication_DifferentLocationReported(t *testing.T) {
 	currEpoch := epoch.NewEpoch(2, 10)
 
 	// Report races at two different addresses.
-	d.reportRaceV2("write-write", addr1, prevEpoch, currEpoch)
-	d.reportRaceV2("write-write", addr2, prevEpoch, currEpoch)
+	d.reportRaceV2("write-write", addr1, nil, prevEpoch, currEpoch)
+	d.reportRaceV2("write-write", addr2, nil, prevEpoch, currEpoch)
 
 	// Both races should be counted (different locations).
 	finalCount := d.RacesDetected()
@@ -486,12 +487,12 @@ func TestDetector_Deduplication_DifferentGoroutinesReported(t *testing.T) {
 	// Race 1: G1 vs G2
 	prevEpoch1 := epoch.NewEpoch(1, 5)
 	currEpoch1 := epoch.NewEpoch(2, 10)
-	d.reportRaceV2("write-write", addr, prevEpoch1, currEpoch1)
+	d.reportRaceV2("write-write", addr, nil, prevEpoch1, currEpoch1)
 
 	// Race 2: G1 vs G3 (different goroutine pair)
 	prevEpoch2 := epoch.NewEpoch(1, 15)
 	currEpoch2 := epoch.NewEpoch(3, 20)
-	d.reportRaceV2("write-write", addr, prevEpoch2, currEpoch2)
+	d.reportRaceV2("write-write", addr, nil, prevEpoch2, currEpoch2)
 
 	// Both races should be counted (different goroutine pairs).
 	finalCount := d.RacesDetected()
@@ -510,12 +511,12 @@ func TestDetector_Deduplication_GoroutineOrderIrrelevant(t *testing.T) {
 	// Race 1: G1 vs G2
 	prevEpoch1 := epoch.NewEpoch(1, 5)
 	currEpoch1 := epoch.NewEpoch(2, 10)
-	d.reportRaceV2("write-write", addr, prevEpoch1, currEpoch1)
+	d.reportRaceV2("write-write", addr, nil, prevEpoch1, currEpoch1)
 
 	// Race 2: G2 vs G1 (same pair, reversed order)
 	prevEpoch2 := epoch.NewEpoch(2, 15)
 	currEpoch2 := epoch.NewEpoch(1, 20)
-	d.reportRaceV2("write-write", addr, prevEpoch2, currEpoch2)
+	d.reportRaceV2("write-write", addr, nil, prevEpoch2, currEpoch2)
 
 	// Only first race should be counted (same goroutine pair).
 	finalCount := d.RacesDetected()
@@ -534,8 +535,8 @@ func TestDetector_Deduplication_DifferentRaceTypesReported(t *testing.T) {
 	currEpoch := epoch.NewEpoch(2, 10)
 
 	// Report different race types at same location with same goroutines.
-	d.reportRaceV2("write-write", addr, prevEpoch, currEpoch)
-	d.reportRaceV2("read-write", addr, prevEpoch, currEpoch)
+	d.reportRaceV2("write-write", addr, nil, prevEpoch, currEpoch)
+	d.reportRaceV2("read-write", addr, nil, prevEpoch, currEpoch)
 
 	// Both races should be counted (different race types).
 	finalCount := d.RacesDetected()
@@ -553,7 +554,7 @@ func TestDetector_Reset_ClearsDeduplicationMap(t *testing.T) {
 	currEpoch := epoch.NewEpoch(2, 10)
 
 	// Report a race.
-	d.reportRaceV2("write-write", addr, prevEpoch, currEpoch)
+	d.reportRaceV2("write-write", addr, nil, prevEpoch, currEpoch)
 	if d.RacesDetected() != 1 {
 		t.Fatalf("Before reset, race count = %d, want 1", d.RacesDetected())
 	}
@@ -567,7 +568,7 @@ func TestDetector_Reset_ClearsDeduplicationMap(t *testing.T) {
 	}
 
 	// Report the same race again - should be counted (dedup map cleared).
-	d.reportRaceV2("write-write", addr, prevEpoch, currEpoch)
+	d.reportRaceV2("write-write", addr, nil, prevEpoch, currEpoch)
 	if d.RacesDetected() != 1 {
 		t.Errorf("After reset and re-report, race count = %d, want 1", d.RacesDetected())
 	}
@@ -598,7 +599,7 @@ func BenchmarkDeduplicationCheck_FirstRace(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		// Use different addresses to avoid deduplication.
-		d.reportRaceV2("write-write", addr+uintptr(i), prevEpoch, currEpoch)
+		d.reportRaceV2("write-write", addr+uintptr(i), nil, prevEpoch, currEpoch)
 	}
 }
 
@@ -612,11 +613,11 @@ func BenchmarkDeduplicationCheck_DuplicateRace(b *testing.B) {
 	currEpoch := epoch.NewEpoch(7, 200)
 
 	// Report first race once.
-	d.reportRaceV2("write-write", addr, prevEpoch, currEpoch)
+	d.reportRaceV2("write-write", addr, nil, prevEpoch, currEpoch)
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		// Report duplicate race (should be skipped).
-		d.reportRaceV2("write-write", addr, prevEpoch, currEpoch)
+		d.reportRaceV2("write-write", addr, nil, prevEpoch, currEpoch)
 	}
 }

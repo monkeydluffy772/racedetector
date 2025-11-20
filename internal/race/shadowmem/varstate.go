@@ -38,11 +38,14 @@ import (
 //   - exclusiveWriter == -1: Shared/multiple writers (full FastTrack)
 //   - exclusiveWriter == 0: Uninitialized (no writes yet)
 //
-// Memory layout:
-//   - Fast path (unpromoted + owned): 8 bytes (W + readEpoch) + 8 bytes (readClock = nil) + 8 bytes (exclusiveWriter) = 24 bytes
-//   - Slow path (promoted): 24 bytes + 1024 bytes (VectorClock allocation) = 1048 bytes
+// Memory layout (v0.2.0 Task 6 updated):
+//   - Base: 8 bytes (W) + 8 bytes (mu) + 4 bytes (readEpoch) + 8 bytes (readClock ptr) = 28 bytes
+//   - SmartTrack: + 8 bytes (exclusiveWriter) + 4 bytes (writeCount) = 40 bytes
+//   - Stack Traces (Task 6): + 8 bytes (writeStackHash) + 8 bytes (readStackHash) = 56 bytes
+//   - Total fast path: 56 bytes per variable
+//   - Promoted path: 56 bytes + 1024 bytes (VectorClock allocation) = 1080 bytes
 //
-// This design achieves 43x memory savings in the common case (24 bytes vs 1048 bytes).
+// Trade-off: 56 bytes per variable (was 40 bytes) for complete race reports with both stacks.
 type VarState struct {
 	W  epoch.Epoch // Last write epoch (always present).
 	mu sync.Mutex  // Protects readEpoch, readClock, and ownership fields from concurrent access.
@@ -57,6 +60,12 @@ type VarState struct {
 	// Tracks exclusive writer to skip expensive happens-before checks.
 	exclusiveWriter int64  // TID of sole writer, -1 if shared, 0 if uninitialized.
 	writeCount      uint32 // Number of writes (for statistics and debugging).
+
+	// Stack Trace Storage (v0.2.0 Task 6):
+	// Hash references to stack depot for previous write/read.
+	// Enables complete race reports showing both current and previous stacks.
+	writeStackHash uint64 // Hash of stack trace for last write (8 bytes).
+	readStackHash  uint64 // Hash of stack trace for last read (8 bytes, only set when read-shared).
 }
 
 // NewVarState creates a new zero-initialized variable state.
@@ -76,6 +85,7 @@ func NewVarState() *VarState {
 // If promoted, this demotes back to fast path (frees VectorClock).
 //
 // SmartTrack (v0.2.0 Task 3): Also resets ownership tracking fields.
+// Stack Traces (v0.2.0 Task 6): Also clears stack hashes.
 //
 // Performance: This operation must be zero-allocation and inline-friendly.
 // Target: <2ns/op.
@@ -88,6 +98,8 @@ func (vs *VarState) Reset() {
 	vs.readClock = nil // Demote if promoted.
 	vs.exclusiveWriter = 0
 	vs.writeCount = 0
+	vs.writeStackHash = 0
+	vs.readStackHash = 0
 	vs.mu.Unlock()
 }
 
@@ -312,4 +324,81 @@ func (vs *VarState) String() string {
 
 	// Fast path: Show Epoch.
 	return wStr + " R:" + vs.readEpoch.String()
+}
+
+// === Stack Trace Accessor Methods (v0.2.0 Task 6) ===
+
+// SetWriteStack records the stack trace hash for a write access.
+//
+// This is called by the detector on every write to store the stack trace
+// for later retrieval during race reporting.
+//
+// Parameters:
+//   - stackHash: Hash returned by stackdepot.CaptureStack()
+//
+// Thread Safety: Uses atomic store for lock-free access.
+// Performance: ~2ns (atomic store).
+//
+// Note: Removed //go:nosplit because sync.Mutex.Lock() requires stack space.
+func (vs *VarState) SetWriteStack(stackHash uint64) {
+	vs.mu.Lock()
+	vs.writeStackHash = stackHash
+	vs.mu.Unlock()
+}
+
+// GetWriteStack retrieves the stack trace hash for the last write.
+//
+// This is called during race reporting to retrieve the previous write stack.
+//
+// Returns:
+//   - uint64: Hash that can be passed to stackdepot.GetStack()
+//   - 0: If no write stack has been captured
+//
+// Thread Safety: Uses atomic load for lock-free access.
+// Performance: ~2ns (atomic load).
+//
+// Note: Removed //go:nosplit because sync.Mutex.Lock() requires stack space.
+func (vs *VarState) GetWriteStack() uint64 {
+	vs.mu.Lock()
+	hash := vs.writeStackHash
+	vs.mu.Unlock()
+	return hash
+}
+
+// SetReadStack records the stack trace hash for a read access (read-shared case).
+//
+// This is called by the detector on read to promoted (read-shared) variables.
+// For unpromoted variables, read stack is not stored (not needed for races).
+//
+// Parameters:
+//   - stackHash: Hash returned by stackdepot.CaptureStack()
+//
+// Thread Safety: Protected by mutex (consistent with other read state).
+// Performance: ~5ns (mutex + field write).
+//
+// Note: Removed //go:nosplit because sync.Mutex.Lock() requires stack space.
+func (vs *VarState) SetReadStack(stackHash uint64) {
+	vs.mu.Lock()
+	vs.readStackHash = stackHash
+	vs.mu.Unlock()
+}
+
+// GetReadStack retrieves the stack trace hash for the last read.
+//
+// This is called during race reporting to retrieve the previous read stack.
+// Only meaningful for promoted (read-shared) variables.
+//
+// Returns:
+//   - uint64: Hash that can be passed to stackdepot.GetStack()
+//   - 0: If no read stack has been captured
+//
+// Thread Safety: Protected by mutex (consistent with other read state).
+// Performance: ~5ns (mutex + field read).
+//
+// Note: Removed //go:nosplit because sync.Mutex.Lock() requires stack space.
+func (vs *VarState) GetReadStack() uint64 {
+	vs.mu.Lock()
+	hash := vs.readStackHash
+	vs.mu.Unlock()
+	return hash
 }
