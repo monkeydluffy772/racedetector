@@ -78,7 +78,7 @@ func TestShadowMemoryGetOrCreate_MultipleAddresses(t *testing.T) {
 	// Create cells for multiple addresses.
 	for i, addr := range addresses {
 		cells[i] = sm.GetOrCreate(addr)
-		cells[i].W = epoch.NewEpoch(uint8(i+1), uint32((i+1)*100))
+		cells[i].W = epoch.NewEpoch(uint16(i+1), uint64((i+1)*100))
 	}
 
 	// Verify each cell is independent.
@@ -89,7 +89,7 @@ func TestShadowMemoryGetOrCreate_MultipleAddresses(t *testing.T) {
 			t.Errorf("GetOrCreate(0x%x) returned different instance", addr)
 		}
 
-		expectedW := epoch.NewEpoch(uint8(i+1), uint32((i+1)*100))
+		expectedW := epoch.NewEpoch(uint16(i+1), uint64((i+1)*100))
 		if vs.W != expectedW {
 			t.Errorf("VarState[0x%x].W = %v, want %v", addr, vs.W, expectedW)
 		}
@@ -297,7 +297,7 @@ func TestShadowMemoryConcurrent_MultipleAddresses(t *testing.T) {
 				vs := sm.GetOrCreate(addr)
 
 				// Update the cell.
-				vs.W = epoch.NewEpoch(uint8(gid), uint32(j))
+				vs.W = epoch.NewEpoch(uint16(gid), uint64(j))
 			}
 		}(i)
 	}
@@ -336,7 +336,7 @@ func TestShadowMemoryConcurrent_GetAndGetOrCreate(t *testing.T) {
 			defer wg.Done()
 
 			vs := sm.GetOrCreate(addr)
-			vs.W = epoch.NewEpoch(uint8(wid), uint32(wid*10))
+			vs.W = epoch.NewEpoch(uint16(wid), uint64(wid*10))
 		}(i)
 	}
 
@@ -389,7 +389,7 @@ func TestShadowMemoryConcurrent_ReadWrite(t *testing.T) {
 
 				// GetOrCreate and update.
 				vs := sm.GetOrCreate(addr)
-				vs.W = epoch.NewEpoch(uint8(goroutineID), uint32(op))
+				vs.W = epoch.NewEpoch(uint16(goroutineID), uint64(op))
 
 				// Sometimes just read.
 				if op%3 == 0 {
@@ -546,7 +546,7 @@ func BenchmarkShadowMemory_Concurrent(b *testing.B) {
 		for pb.Next() {
 			addr := hotAddresses[i%len(hotAddresses)]
 			vs := sm.GetOrCreate(addr)
-			vs.W = epoch.NewEpoch(1, uint32(i))
+			vs.W = epoch.NewEpoch(1, uint64(i))
 			i++
 		}
 	})

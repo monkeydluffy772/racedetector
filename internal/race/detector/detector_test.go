@@ -334,6 +334,7 @@ func TestRacesDetected(t *testing.T) {
 	addr := uintptr(0xB000)
 	vs := d.shadowMemory.GetOrCreate(addr)
 	vs.W = epoch.NewEpoch(1, 100) // Future write
+	vs.SetExclusiveWriter(-1)     // Force shared state for full FastTrack check
 	ctx.C.Set(1, 50)              // Earlier time
 	ctx.Epoch = epoch.NewEpoch(1, 50)
 
@@ -363,6 +364,7 @@ func TestReset(t *testing.T) {
 	// Trigger a race to increment counter.
 	vs := d.shadowMemory.GetOrCreate(addr)
 	vs.W = epoch.NewEpoch(1, 100)
+	vs.SetExclusiveWriter(-1) // Force shared state for full FastTrack check
 	ctx.C.Set(1, 50)
 	ctx.Epoch = epoch.NewEpoch(1, 50)
 
@@ -397,7 +399,7 @@ func TestHappensBeforeWrite(t *testing.T) {
 	tests := []struct {
 		name       string
 		prevWrite  epoch.Epoch
-		currClock  uint32
+		currClock  uint64
 		wantResult bool
 	}{
 		{
@@ -424,7 +426,7 @@ func TestHappensBeforeWrite(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			// Setup context with specified clock.
 			ctx := goroutine.Alloc(1)
-			ctx.C.Set(1, tt.currClock)
+			ctx.C.Set(1, uint32(tt.currClock))
 			ctx.Epoch = epoch.NewEpoch(1, tt.currClock)
 
 			result := d.happensBeforeWrite(tt.prevWrite, ctx)
@@ -444,7 +446,7 @@ func TestHappensBeforeRead(t *testing.T) {
 	tests := []struct {
 		name       string
 		prevRead   epoch.Epoch
-		currClock  uint32
+		currClock  uint64
 		wantResult bool
 	}{
 		{
@@ -464,7 +466,7 @@ func TestHappensBeforeRead(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			ctx := goroutine.Alloc(1)
-			ctx.C.Set(1, tt.currClock)
+			ctx.C.Set(1, uint32(tt.currClock))
 			ctx.Epoch = epoch.NewEpoch(1, tt.currClock)
 
 			result := d.happensBeforeRead(tt.prevRead, ctx)
@@ -541,7 +543,7 @@ func TestConcurrentWrites(_ *testing.T) {
 	for i := 0; i < numGoroutines; i++ {
 		go func(id int) {
 			// Each goroutine gets its own context with unique TID
-			ctx := goroutine.Alloc(uint8(id + 1))
+			ctx := goroutine.Alloc(uint16(id + 1))
 			baseAddr := uintptr(0x10000 + id*0x1000)
 			for j := 0; j < writesPerGoroutine; j++ {
 				addr := baseAddr + uintptr(j)
@@ -949,7 +951,7 @@ func TestConcurrentReads(_ *testing.T) {
 	for i := 0; i < numGoroutines; i++ {
 		go func(id int) {
 			// Each goroutine gets its own context with unique TID
-			ctx := goroutine.Alloc(uint8(id + 1))
+			ctx := goroutine.Alloc(uint16(id + 1))
 			baseAddr := uintptr(0x20000 + id*0x1000)
 			for j := 0; j < readsPerGoroutine; j++ {
 				addr := baseAddr + uintptr(j)
@@ -980,7 +982,7 @@ func TestConcurrentReadsAndWrites(_ *testing.T) {
 	for i := 0; i < numGoroutines; i++ {
 		go func(id int) {
 			// Each goroutine gets its own context with unique TID
-			ctx := goroutine.Alloc(uint8(id + 1))
+			ctx := goroutine.Alloc(uint16(id + 1))
 			baseAddr := uintptr(0x30000 + id*0x1000)
 			for j := 0; j < opsPerGoroutine; j++ {
 				addr := baseAddr + uintptr(j)
@@ -994,7 +996,7 @@ func TestConcurrentReadsAndWrites(_ *testing.T) {
 	for i := 0; i < numGoroutines; i++ {
 		go func(id int) {
 			// Each goroutine gets its own context with unique TID
-			ctx := goroutine.Alloc(uint8(id + numGoroutines + 1))
+			ctx := goroutine.Alloc(uint16(id + numGoroutines + 1))
 			baseAddr := uintptr(0x40000 + id*0x1000)
 			for j := 0; j < opsPerGoroutine; j++ {
 				addr := baseAddr + uintptr(j)

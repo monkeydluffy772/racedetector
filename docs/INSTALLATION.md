@@ -37,7 +37,7 @@ racedetector --version
 
 **Expected output:**
 ```
-racedetector version 0.1.0-alpha
+racedetector version 0.2.0
 ```
 
 **Installation location:**
@@ -300,5 +300,5 @@ If you encounter issues:
 
 ---
 
-*Last Updated: November 19, 2025*
-*Version: 0.1.0-alpha*
+*Last Updated: November 20, 2025*
+*Version: 0.2.0*

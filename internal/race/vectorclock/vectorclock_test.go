@@ -22,7 +22,7 @@ func TestVectorClockClone(t *testing.T) {
 	original := New()
 	original.Set(0, 10)
 	original.Set(5, 20)
-	original.Set(255, 30)
+	original.Set(65535, 30)
 
 	// Clone it.
 	clone := original.Clone()
@@ -34,8 +34,8 @@ func TestVectorClockClone(t *testing.T) {
 	if clone.Get(5) != 20 {
 		t.Errorf("Clone().Get(5) = %d, want 20", clone.Get(5))
 	}
-	if clone.Get(255) != 30 {
-		t.Errorf("Clone().Get(255) = %d, want 30", clone.Get(255))
+	if clone.Get(65535) != 30 {
+		t.Errorf("Clone().Get(65535) = %d, want 30", clone.Get(65535))
 	}
 
 	// Modify clone.
@@ -83,7 +83,7 @@ func TestVectorClockJoinCommutativity(t *testing.T) {
 	}
 
 	// Verify expected maximums.
-	expected := map[uint8]uint32{
+	expected := map[uint16]uint32{
 		0: 10, // max(10, 5)
 		1: 40, // max(30, 40)
 		2: 20, // max(20, 15)
@@ -175,7 +175,7 @@ func TestVectorClockGetSet(t *testing.T) {
 
 	// Test setting and getting various thread IDs.
 	tests := []struct {
-		tid   uint8
+		tid   uint16
 		clock uint32
 	}{
 		{0, 100},
@@ -235,23 +235,23 @@ func TestVectorClockIncrement(t *testing.T) {
 func TestVectorClockString(t *testing.T) {
 	tests := []struct {
 		name string
-		set  map[uint8]uint32
+		set  map[uint16]uint32
 		want string
 	}{
 		{
 			name: "empty",
-			set:  map[uint8]uint32{},
+			set:  map[uint16]uint32{},
 			want: "{}",
 		},
 		{
 			name: "single thread",
-			set:  map[uint8]uint32{0: 42},
+			set:  map[uint16]uint32{0: 42},
 			want: "{0:42}",
 		},
 		{
 			name: "multiple threads",
-			set:  map[uint8]uint32{0: 10, 5: 20, 255: 30},
-			want: "{0:10, 5:20, 255:30}",
+			set:  map[uint16]uint32{0: 10, 5: 20, 65535: 30},
+			want: "{0:10, 5:20, 65535:30}",
 		},
 	}
 
@@ -374,8 +374,8 @@ func BenchmarkVectorClockJoin(b *testing.B) {
 
 	// Set up some realistic values.
 	for i := 0; i < 10; i++ {
-		vc1.Set(uint8(i), uint32(i*10))
-		vc2.Set(uint8(i), uint32(i*15))
+		vc1.Set(uint16(i), uint32(i*10))
+		vc2.Set(uint16(i), uint32(i*15))
 	}
 
 	b.ResetTimer()
@@ -392,8 +392,8 @@ func BenchmarkVectorClockLessOrEqual(b *testing.B) {
 
 	// Set up partial order: vc1 ⊑ vc2.
 	for i := 0; i < 10; i++ {
-		vc1.Set(uint8(i), uint32(i*10))
-		vc2.Set(uint8(i), uint32(i*20))
+		vc1.Set(uint16(i), uint32(i*10))
+		vc2.Set(uint16(i), uint32(i*20))
 	}
 
 	b.ResetTimer()
@@ -409,7 +409,7 @@ func BenchmarkVectorClockClone(b *testing.B) {
 
 	// Set up some values.
 	for i := 0; i < 10; i++ {
-		vc.Set(uint8(i), uint32(i*10))
+		vc.Set(uint16(i), uint32(i*10))
 	}
 
 	b.ResetTimer()

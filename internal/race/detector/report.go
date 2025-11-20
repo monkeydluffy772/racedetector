@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/kolkov/racedetector/internal/race/epoch"
+	"github.com/kolkov/racedetector/internal/race/stackdepot"
 )
 
 // AccessType represents the type of memory access (Read or Write).
@@ -31,6 +32,22 @@ func (a AccessType) String() string {
 		return "Unknown"
 	}
 }
+
+// Race type constants for deduplication and reporting.
+const (
+	// RaceTypeWriteWrite indicates a write-write data race.
+	RaceTypeWriteWrite = "write-write"
+	// RaceTypeReadWrite indicates a read-write data race.
+	RaceTypeReadWrite = "read-write"
+	// RaceTypeWriteRead indicates a write-read data race.
+	RaceTypeWriteRead = "write-read"
+)
+
+// Stack trace configuration constants.
+const (
+	// maxStackDepth is the maximum number of stack frames to capture.
+	maxStackDepth = 32
+)
 
 // AccessInfo represents information about a single memory access.
 //
@@ -85,7 +102,7 @@ type RaceReport struct {
 // generateDeduplicationKey generates a unique key for a race location.
 //
 // The key format is: "{type}:{addr}:{gid1}:{gid2}" where:
-//   - type: Race type string ("write-write", "read-write", "write-read")
+//   - type: Race type string (RaceTypeWriteWrite, RaceTypeReadWrite, RaceTypeWriteRead)
 //   - addr: Memory address in hexadecimal (0x format)
 //   - gid1, gid2: Goroutine IDs sorted numerically (smaller first)
 //
@@ -93,7 +110,7 @@ type RaceReport struct {
 // generates the same key regardless of which goroutine detected it first.
 //
 // Parameters:
-//   - raceType: Type of race ("write-write", "read-write", "write-read")
+//   - raceType: Type of race (RaceTypeWriteWrite, RaceTypeReadWrite, RaceTypeWriteRead)
 //   - addr: Memory address where race occurred
 //   - gid1, gid2: Goroutine IDs involved in the race
 //
@@ -103,7 +120,7 @@ type RaceReport struct {
 //
 // Example:
 //
-//	key := generateDeduplicationKey("write-write", 0x1234, 5, 3)
+//	key := generateDeduplicationKey(RaceTypeWriteWrite, 0x1234, 5, 3)
 //	// Returns: "write-write:0x1234:3:5" (goroutine IDs sorted)
 func generateDeduplicationKey(raceType string, addr uintptr, gid1, gid2 uint32) string {
 	// Sort goroutine IDs to ensure consistent key ordering.
@@ -124,14 +141,13 @@ func generateDeduplicationKey(raceType string, addr uintptr, gid1, gid2 uint32) 
 //
 // Parameters:
 //   - skip: Number of frames to skip (2 = skip captureStackTrace and its caller)
-//   - maxDepth: Maximum number of frames to capture
 //
 // Returns a slice of program counters that can be converted to stack frames
-// using runtime.CallersFrames().
+// using runtime.CallersFrames(). Maximum depth is limited to maxStackDepth (32).
 //
 // Phase 5 Task 5.2: Stack trace capture implementation.
-func captureStackTrace(skip, maxDepth int) []uintptr {
-	pcs := make([]uintptr, maxDepth)
+func captureStackTrace(skip int) []uintptr {
+	pcs := make([]uintptr, maxStackDepth)
 	n := runtime.Callers(skip, pcs)
 	return pcs[:n]
 }
@@ -207,13 +223,125 @@ func formatStackTrace(pcs []uintptr) string {
 	return result
 }
 
+// NewRaceReportWithStacks creates a RaceReport with complete stack traces.
+//
+// This is an enhanced version of NewRaceReport that retrieves previous access
+// stack traces from VarState, enabling complete race reports showing BOTH
+// the current and previous access locations.
+//
+// Parameters:
+//   - raceType: One of RaceTypeWriteWrite, RaceTypeReadWrite, RaceTypeWriteRead
+//   - addr: Memory address where race occurred
+//   - vsInterface: VarState interface{} containing previous access stack hash
+//   - prevEpoch: Epoch of previous conflicting access
+//   - currEpoch: Epoch of current access
+//
+// Returns a fully populated RaceReport with both current and previous stacks.
+//
+// v0.2.0 Task 6: Complete race reports with both stacks.
+func NewRaceReportWithStacks(raceType string, addr uintptr, vsInterface interface{}, prevEpoch, currEpoch epoch.Epoch) *RaceReport {
+	// Import stackdepot package.
+	// Note: We import here instead of at top-level to avoid import cycle.
+	// stackdepot → shadowmem → detector → report → stackdepot
+	// Solution: Import only at function level where needed.
+
+	// Extract goroutine IDs from epochs.
+	currTID, _ := currEpoch.Decode()
+	prevTID, _ := prevEpoch.Decode()
+
+	// Capture stack trace for current access.
+	// Skip 3 frames: captureStackTrace, NewRaceReportWithStacks, reportRaceV2
+	currentStack := captureStackTrace(3)
+
+	// Retrieve previous access stack from VarState.
+	var previousStack []uintptr
+
+	// Type assert to get VarState interface with stack methods.
+	// We use interface{} to avoid import cycle with shadowmem package.
+	type stackGetter interface {
+		GetWriteStack() uint64
+		GetReadStack() uint64
+	}
+
+	//nolint:nestif // Complex but necessary for stack retrieval logic with type assertion
+	if vs, ok := vsInterface.(stackGetter); ok {
+		var prevStackHash uint64
+
+		// Determine which stack to retrieve based on race type.
+		if raceType == RaceTypeWriteWrite || raceType == RaceTypeReadWrite {
+			// Previous access was a write - get write stack.
+			prevStackHash = vs.GetWriteStack()
+		} else {
+			// Previous access was a read - get read stack.
+			prevStackHash = vs.GetReadStack()
+		}
+
+		// Retrieve stack from depot if hash is non-zero.
+		if prevStackHash != 0 {
+			// Import stackdepot at function scope.
+			prevStackTrace := stackdepot.GetStack(prevStackHash)
+			if prevStackTrace != nil {
+				// Convert StackTrace to []uintptr.
+				for _, pc := range prevStackTrace.PC {
+					if pc == 0 {
+						break
+					}
+					previousStack = append(previousStack, pc)
+				}
+			}
+		}
+	}
+
+	report := &RaceReport{
+		Current: AccessInfo{
+			Addr:        addr,
+			GoroutineID: uint32(currTID),
+			Epoch:       currEpoch,
+			StackTrace:  currentStack,
+		},
+		Previous: AccessInfo{
+			Addr:        addr,
+			GoroutineID: uint32(prevTID),
+			Epoch:       prevEpoch,
+			StackTrace:  previousStack, // ✅ Now has previous stack!
+		},
+	}
+
+	// Determine access types based on race type string.
+	switch raceType {
+	case RaceTypeWriteWrite:
+		report.Current.Type = AccessWrite
+		report.Previous.Type = AccessWrite
+	case RaceTypeReadWrite:
+		report.Current.Type = AccessWrite
+		report.Previous.Type = AccessRead
+	case RaceTypeWriteRead:
+		report.Current.Type = AccessRead
+		report.Previous.Type = AccessWrite
+	default:
+		// Unknown race type - default to write-write for safety.
+		report.Current.Type = AccessWrite
+		report.Previous.Type = AccessWrite
+	}
+
+	// Generate deduplication key (Phase 5 Task 5.3).
+	report.DeduplicationKey = generateDeduplicationKey(
+		raceType,
+		addr,
+		uint32(prevTID),
+		uint32(currTID),
+	)
+
+	return report
+}
+
 // NewRaceReport creates a RaceReport from epoch information.
 //
 // This is a convenience constructor that extracts goroutine IDs from epochs
 // and determines access types based on the race type string.
 //
 // Parameters:
-//   - raceType: One of "write-write", "read-write", "write-read"
+//   - raceType: One of RaceTypeWriteWrite, RaceTypeReadWrite, RaceTypeWriteRead
 //   - addr: Memory address where race occurred
 //   - prevEpoch: Epoch of previous conflicting access
 //   - currEpoch: Epoch of current access
@@ -224,6 +352,8 @@ func formatStackTrace(pcs []uintptr) string {
 // Phase 5 Task 5.3: Generates deduplication key.
 // Previous access stack trace is not available (would require storing
 // stack traces in shadow memory, planned for future enhancement).
+//
+// Deprecated: Use NewRaceReportWithStacks() instead (v0.2.0 Task 6).
 func NewRaceReport(raceType string, addr uintptr, prevEpoch, currEpoch epoch.Epoch) *RaceReport {
 	// Extract goroutine IDs from epochs.
 	currTID, _ := currEpoch.Decode()
@@ -232,8 +362,7 @@ func NewRaceReport(raceType string, addr uintptr, prevEpoch, currEpoch epoch.Epo
 	// Capture stack trace for current access.
 	// Skip 3 frames: captureStackTrace, NewRaceReport, reportRaceV2
 	// We'll filter detector internal frames in formatStackTrace()
-	const maxDepth = 32
-	currentStack := captureStackTrace(3, maxDepth)
+	currentStack := captureStackTrace(3)
 
 	report := &RaceReport{
 		Current: AccessInfo{
@@ -254,13 +383,13 @@ func NewRaceReport(raceType string, addr uintptr, prevEpoch, currEpoch epoch.Epo
 
 	// Determine access types based on race type string.
 	switch raceType {
-	case "write-write":
+	case RaceTypeWriteWrite:
 		report.Current.Type = AccessWrite
 		report.Previous.Type = AccessWrite
-	case "read-write":
+	case RaceTypeReadWrite:
 		report.Current.Type = AccessWrite
 		report.Previous.Type = AccessRead
-	case "write-read":
+	case RaceTypeWriteRead:
 		report.Current.Type = AccessRead
 		report.Previous.Type = AccessWrite
 	default:
@@ -367,9 +496,15 @@ func (r *RaceReport) String() string {
 //
 // This prevents spam from the same race occurring multiple times during execution.
 //
+// Stack Traces (v0.2.0 Task 6):
+// - Retrieves previous access stack from VarState
+// - Captures current access stack
+// - Shows BOTH stacks in race report for complete debugging context
+//
 // Parameters:
-//   - raceType: Type of race ("write-write", "read-write", "write-read")
+//   - raceType: Type of race (RaceTypeWriteWrite, RaceTypeReadWrite, RaceTypeWriteRead)
 //   - addr: Memory address where race occurred
+//   - vs: VarState containing previous access stack hash
 //   - prevEpoch: Epoch of previous conflicting access
 //   - currEpoch: Epoch of current access
 //
@@ -377,10 +512,11 @@ func (r *RaceReport) String() string {
 //
 // Phase 5 Task 5.1: ✅ Basic structured reporting
 // Phase 5 Task 5.2: ✅ Stack trace capture for current access
-// Phase 5 Task 5.3: ✅ Deduplication to prevent duplicate reports.
-func (d *Detector) reportRaceV2(raceType string, addr uintptr, prevEpoch, currEpoch epoch.Epoch) {
+// Phase 5 Task 5.3: ✅ Deduplication to prevent duplicate reports
+// v0.2.0 Task 6: ✅ Complete race reports with both stacks.
+func (d *Detector) reportRaceV2(raceType string, addr uintptr, vs interface{}, prevEpoch, currEpoch epoch.Epoch) {
 	// Create structured race report (this generates the deduplication key).
-	report := NewRaceReport(raceType, addr, prevEpoch, currEpoch)
+	report := NewRaceReportWithStacks(raceType, addr, vs, prevEpoch, currEpoch)
 
 	// Phase 5 Task 5.3: Check if this race has already been reported.
 	// Use LoadOrStore for atomic check-and-set operation.

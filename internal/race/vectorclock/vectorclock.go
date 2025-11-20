@@ -16,7 +16,18 @@ import "strings"
 const (
 	// MaxThreads is the maximum number of concurrent threads supported.
 	// This is a fixed-size array for zero-allocation operation.
-	MaxThreads = 256
+	//
+	// 65,536 threads = 16-bit TID space (sufficient for 99%+ of real programs).
+	// Memory: 65,536 × 4 bytes = 262,144 bytes = 256KB per VectorClock.
+	//
+	// Trade-off:
+	//   - Pro: Supports up to 65K concurrent goroutines (vs 256 in MVP).
+	//   - Con: 256KB per VectorClock (vs 1KB in MVP) - 256x memory increase.
+	//   - Mitigation: VectorClock only allocated for read-shared variables (rare).
+	//     FastTrack's adaptive algorithm keeps most variables in Epoch mode (8 bytes).
+	//
+	// v0.4 will add dynamic TID mapping for unlimited goroutines with compact storage.
+	MaxThreads = 65536
 )
 
 // VectorClock represents logical time across multiple threads.
@@ -24,8 +35,10 @@ const (
 // Each element vc[tid] stores the clock value for thread tid.
 // This is a fixed-size array (not a slice) to avoid heap allocations.
 //
-// Layout: [Thread0, Thread1, ..., Thread255]
+// Layout: [Thread0, Thread1, ..., Thread65535]
 // Example: {0: 50, 1: 30, 2: 60, ...} means Thread0@50, Thread1@30, Thread2@60.
+//
+// Size: 65,536 × 4 bytes = 256KB (large, but only allocated for read-shared variables).
 type VectorClock [MaxThreads]uint32
 
 // New creates a zero-initialized vector clock.
@@ -105,14 +118,14 @@ func (vc *VectorClock) HappensBefore(other *VectorClock) bool {
 //
 // This is called on every memory access by thread tid.
 // Increments vc[tid] to represent forward progress in logical time.
-func (vc *VectorClock) Increment(tid uint8) {
+func (vc *VectorClock) Increment(tid uint16) {
 	vc[tid]++
 }
 
 // Get returns the clock value for thread tid.
 //
 // Used to read a specific thread's logical time from the vector clock.
-func (vc *VectorClock) Get(tid uint8) uint32 {
+func (vc *VectorClock) Get(tid uint16) uint32 {
 	return vc[tid]
 }
 
@@ -120,7 +133,7 @@ func (vc *VectorClock) Get(tid uint8) uint32 {
 //
 // Used to update a specific thread's logical time in the vector clock.
 // Typically used during initialization or synchronization operations.
-func (vc *VectorClock) Set(tid uint8, clock uint32) {
+func (vc *VectorClock) Set(tid uint16, clock uint32) {
 	vc[tid] = clock
 }
 

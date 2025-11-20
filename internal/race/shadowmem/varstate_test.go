@@ -9,17 +9,19 @@ import (
 
 // TestVarStateSize verifies that VarState has expected size.
 // Phase 3: 24 bytes (W + mu + readEpoch + readClock pointer).
-// This is larger than original Phase 3 (16 bytes) due to sync.Mutex for race-free operation.
-// Trade-off: +8 bytes per VarState for correctness (no data races in detector itself).
+// v0.2.0 Task 3 (SmartTrack): 40 bytes (adds exclusiveWriter int64 + writeCount uint32 + padding).
+// v0.2.0 Task 4 (64-bit Epoch): 48 bytes (W changed from uint32 to uint64, adds 8 bytes).
+// v0.2.0 Task 6 (Stack Depot): 64 bytes (adds writeStackHash uint64 + readStackHash uint64).
+// Trade-off: 64 bytes per VarState for complete race reports with both stacks.
 func TestVarStateSize(t *testing.T) {
-	const expectedSize = 24 // W(8) + mu(8) + readEpoch(4) + readClock(8) = 28, aligned to 24
+	const expectedSize = 64 // W(8) + mu(8) + readEpoch(8) + readClock(8) + exclusiveWriter(8) + writeCount(4) + padding(4) + writeStackHash(8) + readStackHash(8)
 	actualSize := unsafe.Sizeof(VarState{})
 
 	if actualSize != expectedSize {
-		t.Errorf("VarState size = %d bytes, want %d bytes (W + mu + readEpoch + pointer)", actualSize, expectedSize)
+		t.Errorf("VarState size = %d bytes, want %d bytes (W + mu + readEpoch + pointer + ownership + stack hashes)", actualSize, expectedSize)
 	}
 
-	t.Logf("VarState size: %d bytes (adaptive representation + race-safe)", actualSize)
+	t.Logf("VarState size: %d bytes (64-bit Epoch + adaptive representation + race-safe + SmartTrack ownership + Stack Depot)", actualSize)
 }
 
 // TestVarStateNewZero verifies that NewVarState creates a zero-initialized state.
@@ -90,9 +92,9 @@ func TestVarStateReset(t *testing.T) {
 func TestVarStateReadWrite(t *testing.T) {
 	tests := []struct {
 		name     string
-		wTID     uint8
+		wTID     uint16
 		wClock   uint32
-		rTID     uint8
+		rTID     uint16
 		rClock   uint32
 		wantWStr string // Expected W.String() format.
 		wantRStr string // Expected R.String() format.
@@ -149,15 +151,15 @@ func TestVarStateReadWrite(t *testing.T) {
 			vs := NewVarState()
 
 			// Set W and readEpoch.
-			vs.W = epoch.NewEpoch(tt.wTID, tt.wClock)
-			vs.SetReadEpoch(epoch.NewEpoch(tt.rTID, tt.rClock))
+			vs.W = epoch.NewEpoch(tt.wTID, uint64(tt.wClock))
+			vs.SetReadEpoch(epoch.NewEpoch(tt.rTID, uint64(tt.rClock)))
 
 			// Verify W epoch.
 			wTID, wClock := vs.W.Decode()
 			if wTID != tt.wTID {
 				t.Errorf("W.TID = %d, want %d", wTID, tt.wTID)
 			}
-			if wClock != tt.wClock {
+			if wClock != uint64(tt.wClock) {
 				t.Errorf("W.Clock = %d, want %d", wClock, tt.wClock)
 			}
 
@@ -166,7 +168,7 @@ func TestVarStateReadWrite(t *testing.T) {
 			if rTID != tt.rTID {
 				t.Errorf("GetReadEpoch().TID = %d, want %d", rTID, tt.rTID)
 			}
-			if rClock != tt.rClock {
+			if rClock != uint64(tt.rClock) {
 				t.Errorf("GetReadEpoch().Clock = %d, want %d", rClock, tt.rClock)
 			}
 
@@ -325,8 +327,8 @@ func BenchmarkVarStateReadWrite(b *testing.B) {
 	b.ResetTimer()
 
 	for i := 0; i < b.N; i++ {
-		vs.W = epoch.NewEpoch(5, uint32(i))
-		vs.SetReadEpoch(epoch.NewEpoch(3, uint32(i)))
+		vs.W = epoch.NewEpoch(5, uint64(i))
+		vs.SetReadEpoch(epoch.NewEpoch(3, uint64(i)))
 	}
 }
 

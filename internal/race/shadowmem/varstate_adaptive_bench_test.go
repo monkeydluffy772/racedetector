@@ -215,7 +215,7 @@ func BenchmarkVarState_FastPath_Read_Different_Epoch(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		// Fast path: Different epoch (update required).
 		if !vs.IsPromoted() {
-			readEpoch := epoch.NewEpoch(5, uint32(i))
+			readEpoch := epoch.NewEpoch(5, uint64(i))
 			vs.SetReadEpoch(readEpoch)
 		}
 	}
