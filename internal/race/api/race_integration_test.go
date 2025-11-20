@@ -26,16 +26,42 @@ import (
 //   6. Concurrent reads with write (read-write race)
 //   7. Many addresses stress test
 
+// captureStderr redirects stderr to a pipe and starts async reader.
+// Returns: reader, writer, buffer channel, restore function.
+// Must call restore() to stop capture and get output.
+//
+// Windows Fix: Pipes have small buffers on Windows. If Fini() writes a large
+// report, the pipe blocks. Reading asynchronously prevents deadlock.
+func captureStderr() (restore func() string) {
+	oldStderr := os.Stderr
+	r, w, _ := os.Pipe()
+	os.Stderr = w
+
+	var buf bytes.Buffer
+	done := make(chan struct{})
+
+	// Read from pipe asynchronously (prevents Windows pipe buffer deadlock)
+	go func() {
+		_, _ = io.Copy(&buf, r)
+		close(done)
+	}()
+
+	restore = func() string {
+		w.Close()
+		os.Stderr = oldStderr
+		<-done
+		return buf.String()
+	}
+
+	return restore
+}
+
 // TestIntegration_SimpleRace verifies basic write-write race detection end-to-end.
 //
 // Scenario: Two goroutines writing to the same variable without synchronization.
 // Expected: Race should be detected and reported in Fini() output.
 func TestIntegration_SimpleRace(t *testing.T) {
-	// Capture stderr to verify race report output
-	oldStderr := os.Stderr
-	r, w, _ := os.Pipe()
-	os.Stderr = w
-
+	restore := captureStderr()
 	// Initialize race detector
 	Init()
 
@@ -69,13 +95,7 @@ func TestIntegration_SimpleRace(t *testing.T) {
 	// Finalize and capture output
 	Fini()
 
-	// Restore and read stderr
-	w.Close()
-	os.Stderr = oldStderr
-
-	var buf bytes.Buffer
-	_, _ = io.Copy(&buf, r)
-	output := buf.String()
+	output := restore()
 
 	// Verify race was detected
 	if !strings.Contains(output, "WARNING") {
@@ -98,11 +118,7 @@ func TestIntegration_SimpleRace(t *testing.T) {
 // Scenario: Sequential writes and reads to a variable (no concurrency).
 // Expected: Zero races detected, success message in Fini() output.
 func TestIntegration_NoRace_Sequential(t *testing.T) {
-	// Capture stderr
-	oldStderr := os.Stderr
-	r, w, _ := os.Pipe()
-	os.Stderr = w
-
+	restore := captureStderr()
 	Init()
 
 	var data int
@@ -118,13 +134,7 @@ func TestIntegration_NoRace_Sequential(t *testing.T) {
 
 	Fini()
 
-	// Restore and read stderr
-	w.Close()
-	os.Stderr = oldStderr
-
-	var buf bytes.Buffer
-	_, _ = io.Copy(&buf, r)
-	output := buf.String()
+	output := restore()
 
 	// Verify no races detected
 	if strings.Contains(output, "WARNING") {
@@ -147,11 +157,7 @@ func TestIntegration_NoRace_Sequential(t *testing.T) {
 // Scenario: 5 goroutines accessing shared data with mixed read/write operations.
 // Expected: Races should be detected for unsynchronized writes.
 func TestIntegration_MultipleGoroutines(t *testing.T) {
-	// Capture stderr
-	oldStderr := os.Stderr
-	r, w, _ := os.Pipe()
-	os.Stderr = w
-
+	restore := captureStderr()
 	Init()
 
 	var shared int
@@ -180,13 +186,7 @@ func TestIntegration_MultipleGoroutines(t *testing.T) {
 	wg.Wait()
 	Fini()
 
-	// Restore and read stderr
-	w.Close()
-	os.Stderr = oldStderr
-
-	var buf bytes.Buffer
-	_, _ = io.Copy(&buf, r)
-	output := buf.String()
+	output := restore()
 
 	// Verify race was detected (multiple concurrent writes)
 	if !strings.Contains(output, "WARNING") {
@@ -208,11 +208,7 @@ func TestIntegration_MultipleGoroutines(t *testing.T) {
 //
 // Expected: Only races for variable A should be detected.
 func TestIntegration_RaceAndNoRace_Mixed(t *testing.T) {
-	// Capture stderr
-	oldStderr := os.Stderr
-	r, w, _ := os.Pipe()
-	os.Stderr = w
-
+	restore := captureStderr()
 	Init()
 
 	var racyVar int
@@ -249,13 +245,7 @@ func TestIntegration_RaceAndNoRace_Mixed(t *testing.T) {
 
 	Fini()
 
-	// Restore and read stderr
-	w.Close()
-	os.Stderr = oldStderr
-
-	var buf bytes.Buffer
-	_, _ = io.Copy(&buf, r)
-	output := buf.String()
+	output := restore()
 
 	// Verify race was detected (for racyVar only)
 	if !strings.Contains(output, "WARNING") {
@@ -280,11 +270,7 @@ func TestIntegration_RaceAndNoRace_Mixed(t *testing.T) {
 //   - Fini() produces proper summary report
 //   - Output format is correct
 func TestIntegration_FullLifecycle(t *testing.T) {
-	// Capture stderr
-	oldStderr := os.Stderr
-	r, w, _ := os.Pipe()
-	os.Stderr = w
-
+	restore := captureStderr()
 	// Phase 1: Initialize
 	Init()
 
@@ -322,13 +308,7 @@ func TestIntegration_FullLifecycle(t *testing.T) {
 	// Phase 3: Finalize
 	Fini()
 
-	// Restore and read stderr
-	w.Close()
-	os.Stderr = oldStderr
-
-	var buf bytes.Buffer
-	_, _ = io.Copy(&buf, r)
-	output := buf.String()
+	output := restore()
 
 	// Validate output format
 	if !strings.Contains(output, "==================") {
@@ -364,11 +344,7 @@ func TestIntegration_FullLifecycle(t *testing.T) {
 // Scenario: Multiple goroutines reading while one writes to shared variable.
 // Expected: Read-write races should be detected.
 func TestIntegration_ConcurrentReads(t *testing.T) {
-	// Capture stderr
-	oldStderr := os.Stderr
-	r, w, _ := os.Pipe()
-	os.Stderr = w
-
+	restore := captureStderr()
 	Init()
 
 	var data int
@@ -401,13 +377,7 @@ func TestIntegration_ConcurrentReads(t *testing.T) {
 	wg.Wait()
 	Fini()
 
-	// Restore and read stderr
-	w.Close()
-	os.Stderr = oldStderr
-
-	var buf bytes.Buffer
-	_, _ = io.Copy(&buf, r)
-	output := buf.String()
+	output := restore()
 
 	// Verify race was detected (read-write or write-read)
 	if !strings.Contains(output, "WARNING") {
@@ -426,11 +396,7 @@ func TestIntegration_ConcurrentReads(t *testing.T) {
 // Scenario: Access 100+ different addresses to stress shadow memory allocation.
 // Expected: No races (each goroutine accesses unique addresses), good performance.
 func TestIntegration_ManyAddresses(t *testing.T) {
-	// Capture stderr
-	oldStderr := os.Stderr
-	r, w, _ := os.Pipe()
-	os.Stderr = w
-
+	restore := captureStderr()
 	Init()
 
 	const numAddresses = 200
@@ -464,13 +430,7 @@ func TestIntegration_ManyAddresses(t *testing.T) {
 
 	Fini()
 
-	// Restore and read stderr
-	w.Close()
-	os.Stderr = oldStderr
-
-	var buf bytes.Buffer
-	_, _ = io.Copy(&buf, r)
-	output := buf.String()
+	output := restore()
 
 	// Verify no races (all accesses to unique addresses)
 	if strings.Contains(output, "WARNING") {
@@ -501,11 +461,7 @@ func TestIntegration_RepeatedInitFini(t *testing.T) {
 	for cycle := 0; cycle < 3; cycle++ {
 		t.Logf("Cycle %d", cycle)
 
-		// Capture stderr
-		oldStderr := os.Stderr
-		r, w, _ := os.Pipe()
-		os.Stderr = w
-
+		restore := captureStderr()
 		Init()
 
 		// Do some operations
@@ -518,13 +474,7 @@ func TestIntegration_RepeatedInitFini(t *testing.T) {
 
 		Fini()
 
-		// Restore and read stderr
-		w.Close()
-		os.Stderr = oldStderr
-
-		var buf bytes.Buffer
-		_, _ = io.Copy(&buf, r)
-		output := buf.String()
+		output := restore()
 
 		// Each cycle should report no races (sequential access)
 		if strings.Contains(output, "WARNING") {
@@ -549,11 +499,7 @@ func TestIntegration_RepeatedInitFini(t *testing.T) {
 //
 // Expected: Only races from Phase 1 should be counted.
 func TestIntegration_DisableDuringExecution(t *testing.T) {
-	// Capture stderr
-	oldStderr := os.Stderr
-	r, w, _ := os.Pipe()
-	os.Stderr = w
-
+	restore := captureStderr()
 	Init()
 
 	var shared int
@@ -612,13 +558,7 @@ func TestIntegration_DisableDuringExecution(t *testing.T) {
 
 	Fini()
 
-	// Restore and read stderr
-	w.Close()
-	os.Stderr = oldStderr
-
-	var buf bytes.Buffer
-	_, _ = io.Copy(&buf, r)
-	_ = buf.String()
+	_ = restore()
 
 	// Verify: Race count should not increase after Disable()
 	if racesPhase3 != racesPhase1 {
@@ -637,11 +577,7 @@ func TestIntegration_DisableDuringExecution(t *testing.T) {
 // Scenario: Multiple goroutines accessing fields of a struct.
 // Expected: Races detected for concurrent field access.
 func TestIntegration_LargeDataStructure(t *testing.T) {
-	// Capture stderr
-	oldStderr := os.Stderr
-	r, w, _ := os.Pipe()
-	os.Stderr = w
-
+	restore := captureStderr()
 	Init()
 
 	type Data struct {
@@ -683,13 +619,7 @@ func TestIntegration_LargeDataStructure(t *testing.T) {
 
 	Fini()
 
-	// Restore and read stderr
-	w.Close()
-	os.Stderr = oldStderr
-
-	var buf bytes.Buffer
-	_, _ = io.Copy(&buf, r)
-	output := buf.String()
+	output := restore()
 
 	// Verify race was detected for Field1
 	if !strings.Contains(output, "WARNING") {
@@ -708,11 +638,7 @@ func TestIntegration_LargeDataStructure(t *testing.T) {
 // Scenario: Several goroutines (5) competing for same variable.
 // Expected: Multiple races detected, detector handles contention.
 func TestIntegration_HighContentionVariable(t *testing.T) {
-	// Capture stderr
-	oldStderr := os.Stderr
-	r, w, _ := os.Pipe()
-	os.Stderr = w
-
+	restore := captureStderr()
 	Init()
 
 	var hotspot int
@@ -737,13 +663,7 @@ func TestIntegration_HighContentionVariable(t *testing.T) {
 
 	Fini()
 
-	// Restore and read stderr
-	w.Close()
-	os.Stderr = oldStderr
-
-	var buf bytes.Buffer
-	_, _ = io.Copy(&buf, r)
-	output := buf.String()
+	output := restore()
 
 	// Verify races detected
 	if !strings.Contains(output, "WARNING") {
@@ -762,11 +682,7 @@ func TestIntegration_HighContentionVariable(t *testing.T) {
 // Scenario: Goroutines using mutex to protect shared variable.
 // Expected: No races detected (mutex provides synchronization).
 func TestIntegration_SafeSynchronization(t *testing.T) {
-	// Capture stderr
-	oldStderr := os.Stderr
-	r, w, _ := os.Pipe()
-	os.Stderr = w
-
+	restore := captureStderr()
 	Init()
 
 	var data int
@@ -793,13 +709,7 @@ func TestIntegration_SafeSynchronization(t *testing.T) {
 	wg.Wait()
 	Fini()
 
-	// Restore and read stderr
-	w.Close()
-	os.Stderr = oldStderr
-
-	var buf bytes.Buffer
-	_, _ = io.Copy(&buf, r)
-	output := buf.String()
+	output := restore()
 
 	// Note: Our MVP detector doesn't track mutex synchronization yet,
 	// so this test may still report races. In a full implementation

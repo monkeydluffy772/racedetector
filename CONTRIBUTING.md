@@ -4,9 +4,9 @@ Thank you for your interest in contributing to the Pure-Go Race Detector project
 
 ## 🎯 Project Status
 
-**Current Release:** v0.1.0 (Production-Ready)
-**Next Milestone:** v0.2.0 - Enhanced Features (December 2025)
-**Long-term Goal:** Official Go toolchain integration (2026-2027)
+**Status:** Production-Ready
+**Goal:** Official Go toolchain integration
+**See:** [CHANGELOG.md](CHANGELOG.md) for version history and [ROADMAP.md](ROADMAP.md) for upcoming features
 
 ## 🐛 Reporting Issues
 
@@ -26,11 +26,8 @@ We welcome feature requests! Please provide:
 - Expected behavior
 - Why this feature would benefit the community
 
-**Current Priorities** (v0.2.0 - December 2025):
-1. Enhanced stack traces with full call chains
-2. Edge case handling (select, type switch, closures)
-3. Performance optimizations
-4. Additional platform support
+**Current Priorities:**
+See [ROADMAP.md](ROADMAP.md) for detailed development priorities and upcoming features.
 
 ## 🧪 Testing
 
@@ -40,7 +37,7 @@ We're actively looking for testers! Help us by:
 - **Sharing use case stories** (success or failure)
 - **Performance feedback** from real-world projects
 
-This is the **most valuable contribution** for v0.1.0!
+This is the **most valuable contribution** at this stage!
 
 ## 📢 Spread the Word
 
@@ -52,26 +49,27 @@ Help us get community support for Go integration:
 
 **More stars = stronger case for official Go toolchain integration!**
 
-## 🔮 Pull Requests (Coming Soon)
+## 🔮 Pull Requests
 
-We're currently in **community validation phase** (v0.1.0). Code contributions will be accepted starting with v0.2.0 (December 2025).
+We welcome code contributions!
 
-**For now, please:**
-- Report bugs and edge cases
-- Test in your projects
-- Share feedback and use cases
-- Improve documentation
-
-**Starting v0.2.0, we'll accept PRs for:**
+**We accept PRs for:**
 - Bug fixes
 - Performance optimizations
 - Documentation improvements
 - Test cases
 - Additional platform support
+- Edge case handling
 
-## 🛠️ Development Setup (For Future Contributors)
+**Before submitting:**
+- Read this guide thoroughly
+- Check existing issues/PRs
+- Follow code quality standards
+- Add tests for new features
 
-When we open for code contributions:
+## 🛠️ Development Setup
+
+For code contributions:
 
 ```bash
 # Clone repository
@@ -160,5 +158,4 @@ Every contribution helps make race detection better for the Go community!
 
 ---
 
-*Contributing guidelines for Pure-Go Race Detector v0.1.0*
-*Updated: November 19, 2025*
+*Contributing guidelines for Pure-Go Race Detector*

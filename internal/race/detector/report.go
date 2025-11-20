@@ -33,6 +33,22 @@ func (a AccessType) String() string {
 	}
 }
 
+// Race type constants for deduplication and reporting.
+const (
+	// RaceTypeWriteWrite indicates a write-write data race.
+	RaceTypeWriteWrite = "write-write"
+	// RaceTypeReadWrite indicates a read-write data race.
+	RaceTypeReadWrite = "read-write"
+	// RaceTypeWriteRead indicates a write-read data race.
+	RaceTypeWriteRead = "write-read"
+)
+
+// Stack trace configuration constants.
+const (
+	// maxStackDepth is the maximum number of stack frames to capture.
+	maxStackDepth = 32
+)
+
 // AccessInfo represents information about a single memory access.
 //
 // This structure captures all details needed to report a memory access
@@ -86,7 +102,7 @@ type RaceReport struct {
 // generateDeduplicationKey generates a unique key for a race location.
 //
 // The key format is: "{type}:{addr}:{gid1}:{gid2}" where:
-//   - type: Race type string ("write-write", "read-write", "write-read")
+//   - type: Race type string (RaceTypeWriteWrite, RaceTypeReadWrite, RaceTypeWriteRead)
 //   - addr: Memory address in hexadecimal (0x format)
 //   - gid1, gid2: Goroutine IDs sorted numerically (smaller first)
 //
@@ -94,7 +110,7 @@ type RaceReport struct {
 // generates the same key regardless of which goroutine detected it first.
 //
 // Parameters:
-//   - raceType: Type of race ("write-write", "read-write", "write-read")
+//   - raceType: Type of race (RaceTypeWriteWrite, RaceTypeReadWrite, RaceTypeWriteRead)
 //   - addr: Memory address where race occurred
 //   - gid1, gid2: Goroutine IDs involved in the race
 //
@@ -104,7 +120,7 @@ type RaceReport struct {
 //
 // Example:
 //
-//	key := generateDeduplicationKey("write-write", 0x1234, 5, 3)
+//	key := generateDeduplicationKey(RaceTypeWriteWrite, 0x1234, 5, 3)
 //	// Returns: "write-write:0x1234:3:5" (goroutine IDs sorted)
 func generateDeduplicationKey(raceType string, addr uintptr, gid1, gid2 uint32) string {
 	// Sort goroutine IDs to ensure consistent key ordering.
@@ -125,14 +141,13 @@ func generateDeduplicationKey(raceType string, addr uintptr, gid1, gid2 uint32) 
 //
 // Parameters:
 //   - skip: Number of frames to skip (2 = skip captureStackTrace and its caller)
-//   - maxDepth: Maximum number of frames to capture
 //
 // Returns a slice of program counters that can be converted to stack frames
-// using runtime.CallersFrames().
+// using runtime.CallersFrames(). Maximum depth is limited to maxStackDepth (32).
 //
 // Phase 5 Task 5.2: Stack trace capture implementation.
-func captureStackTrace(skip, maxDepth int) []uintptr {
-	pcs := make([]uintptr, maxDepth)
+func captureStackTrace(skip int) []uintptr {
+	pcs := make([]uintptr, maxStackDepth)
 	n := runtime.Callers(skip, pcs)
 	return pcs[:n]
 }
@@ -215,7 +230,7 @@ func formatStackTrace(pcs []uintptr) string {
 // the current and previous access locations.
 //
 // Parameters:
-//   - raceType: One of "write-write", "read-write", "write-read"
+//   - raceType: One of RaceTypeWriteWrite, RaceTypeReadWrite, RaceTypeWriteRead
 //   - addr: Memory address where race occurred
 //   - vsInterface: VarState interface{} containing previous access stack hash
 //   - prevEpoch: Epoch of previous conflicting access
@@ -236,8 +251,7 @@ func NewRaceReportWithStacks(raceType string, addr uintptr, vsInterface interfac
 
 	// Capture stack trace for current access.
 	// Skip 3 frames: captureStackTrace, NewRaceReportWithStacks, reportRaceV2
-	const maxDepth = 32
-	currentStack := captureStackTrace(3, maxDepth)
+	currentStack := captureStackTrace(3)
 
 	// Retrieve previous access stack from VarState.
 	var previousStack []uintptr
@@ -254,7 +268,7 @@ func NewRaceReportWithStacks(raceType string, addr uintptr, vsInterface interfac
 		var prevStackHash uint64
 
 		// Determine which stack to retrieve based on race type.
-		if raceType == "write-write" || raceType == "read-write" {
+		if raceType == RaceTypeWriteWrite || raceType == RaceTypeReadWrite {
 			// Previous access was a write - get write stack.
 			prevStackHash = vs.GetWriteStack()
 		} else {
@@ -295,13 +309,13 @@ func NewRaceReportWithStacks(raceType string, addr uintptr, vsInterface interfac
 
 	// Determine access types based on race type string.
 	switch raceType {
-	case "write-write":
+	case RaceTypeWriteWrite:
 		report.Current.Type = AccessWrite
 		report.Previous.Type = AccessWrite
-	case "read-write":
+	case RaceTypeReadWrite:
 		report.Current.Type = AccessWrite
 		report.Previous.Type = AccessRead
-	case "write-read":
+	case RaceTypeWriteRead:
 		report.Current.Type = AccessRead
 		report.Previous.Type = AccessWrite
 	default:
@@ -327,7 +341,7 @@ func NewRaceReportWithStacks(raceType string, addr uintptr, vsInterface interfac
 // and determines access types based on the race type string.
 //
 // Parameters:
-//   - raceType: One of "write-write", "read-write", "write-read"
+//   - raceType: One of RaceTypeWriteWrite, RaceTypeReadWrite, RaceTypeWriteRead
 //   - addr: Memory address where race occurred
 //   - prevEpoch: Epoch of previous conflicting access
 //   - currEpoch: Epoch of current access
@@ -348,8 +362,7 @@ func NewRaceReport(raceType string, addr uintptr, prevEpoch, currEpoch epoch.Epo
 	// Capture stack trace for current access.
 	// Skip 3 frames: captureStackTrace, NewRaceReport, reportRaceV2
 	// We'll filter detector internal frames in formatStackTrace()
-	const maxDepth = 32
-	currentStack := captureStackTrace(3, maxDepth)
+	currentStack := captureStackTrace(3)
 
 	report := &RaceReport{
 		Current: AccessInfo{
@@ -370,13 +383,13 @@ func NewRaceReport(raceType string, addr uintptr, prevEpoch, currEpoch epoch.Epo
 
 	// Determine access types based on race type string.
 	switch raceType {
-	case "write-write":
+	case RaceTypeWriteWrite:
 		report.Current.Type = AccessWrite
 		report.Previous.Type = AccessWrite
-	case "read-write":
+	case RaceTypeReadWrite:
 		report.Current.Type = AccessWrite
 		report.Previous.Type = AccessRead
-	case "write-read":
+	case RaceTypeWriteRead:
 		report.Current.Type = AccessRead
 		report.Previous.Type = AccessWrite
 	default:
@@ -489,7 +502,7 @@ func (r *RaceReport) String() string {
 // - Shows BOTH stacks in race report for complete debugging context
 //
 // Parameters:
-//   - raceType: Type of race ("write-write", "read-write", "write-read")
+//   - raceType: Type of race (RaceTypeWriteWrite, RaceTypeReadWrite, RaceTypeWriteRead)
 //   - addr: Memory address where race occurred
 //   - vs: VarState containing previous access stack hash
 //   - prevEpoch: Epoch of previous conflicting access

@@ -299,11 +299,9 @@ func BenchmarkRaceReport_String(b *testing.B) {
 // BenchmarkCaptureStackTrace benchmarks stack trace capture.
 // Phase 5 Task 5.2: Measures overhead of runtime.Callers().
 func BenchmarkCaptureStackTrace(b *testing.B) {
-	const maxDepth = 32
-
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_ = captureStackTrace(5, maxDepth)
+		_ = captureStackTrace(5)
 	}
 }
 
@@ -311,7 +309,7 @@ func BenchmarkCaptureStackTrace(b *testing.B) {
 // Phase 5 Task 5.2: Measures overhead of runtime.CallersFrames() and formatting.
 func BenchmarkFormatStackTrace(b *testing.B) {
 	// Capture a real stack trace once
-	pcs := captureStackTrace(2, 32)
+	pcs := captureStackTrace(2)
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {

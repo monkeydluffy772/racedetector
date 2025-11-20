@@ -77,7 +77,6 @@ func TestStackDeduplication(t *testing.T) {
 	}
 }
 
-
 // TestGetStackNotFound tests retrieval of non-existent hash.
 func TestGetStackNotFound(t *testing.T) {
 	Reset()
