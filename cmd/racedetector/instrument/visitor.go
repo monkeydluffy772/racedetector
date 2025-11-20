@@ -690,6 +690,99 @@ func (v *instrumentVisitor) GetStats() InstrumentStats {
 	return v.stats
 }
 
+// ApplyCoalescing applies BigFoot coalescing optimization to reduce barriers.
+//
+// This method analyzes instrumentation points and groups consecutive operations
+// on the same variable. Instead of inserting a barrier BEFORE each operation,
+// we insert a SINGLE barrier AFTER the last operation in each group.
+//
+// Academic Foundation: BigFoot algorithm (PLDI 2017)
+// Expected Impact: 40-60% reduction in race barriers
+//
+// Safety: Conservative - only coalesces when proven safe (same variable,
+// consecutive statements, no control flow, no function calls).
+//
+// Parameters:
+//   - enableCoalescing: If false, skip coalescing (debugging mode)
+//
+// Returns:
+//   - CoalescingStats: Statistics about coalescing effectiveness
+//
+// Thread Safety: NOT thread-safe (modifies instrumentationPoints).
+func (v *instrumentVisitor) ApplyCoalescing(enableCoalescing bool) CoalescingStats {
+	if !enableCoalescing || len(v.instrumentationPoints) < 2 {
+		// No coalescing - return empty stats
+		return CoalescingStats{
+			TotalOperations: len(v.instrumentationPoints),
+		}
+	}
+
+	// Analyze instrumentation points for coalescing opportunities
+	analyzer := NewCoalescingAnalyzer()
+	groups, stats := analyzer.AnalyzeInstrumentationPoints(v.instrumentationPoints, v.file)
+
+	if len(groups) == 0 {
+		// No coalescing opportunities found
+		return stats
+	}
+
+	// Apply coalescing by modifying instrumentation points
+	// Strategy: Remove intermediate barriers, keep only last barrier in each group
+	coalescedPoints := v.applyCoalescingToPoints(groups)
+
+	// Replace original instrumentation points with coalesced version
+	v.instrumentationPoints = coalescedPoints
+
+	return stats
+}
+
+// applyCoalescingToPoints applies coalescing groups to instrumentation points.
+//
+// Algorithm:
+//  1. Create set of statements in coalescing groups
+//  2. Keep only LAST operation from each group
+//  3. Keep all operations NOT in any group
+//
+// Example:
+//
+//	Input: [x=1, x=2, x=3, y=1]
+//	Groups: [{Operations: [x=1, x=2, x=3]}]
+//	Output: [x=3, y=1]  (removed x=1, x=2 barriers)
+//
+// Parameters:
+//   - groups: Coalescing groups from analyzer
+//
+// Returns:
+//   - []instrumentPoint: Coalesced instrumentation points
+//
+// Thread Safety: NOT thread-safe (reads instrumentationPoints).
+func (v *instrumentVisitor) applyCoalescingToPoints(groups []CoalescingGroup) []instrumentPoint {
+	// Build map of statements in coalescing groups
+	// Key: ast.Node (statement), Value: true if should be REMOVED
+	shouldRemove := make(map[ast.Node]bool)
+
+	for _, group := range groups {
+		// Remove barriers for all operations EXCEPT the last one
+		for i := 0; i < len(group.Operations)-1; i++ {
+			shouldRemove[group.Operations[i]] = true
+		}
+		// Keep the last operation's barrier (group.BarrierPos)
+	}
+
+	// Filter instrumentation points - keep only non-removed operations
+	coalescedPoints := make([]instrumentPoint, 0, len(v.instrumentationPoints))
+
+	for _, point := range v.instrumentationPoints {
+		if !shouldRemove[point.Node] {
+			// Keep this instrumentation point
+			coalescedPoints = append(coalescedPoints, point)
+		}
+		// else: Remove this barrier (coalesced)
+	}
+
+	return coalescedPoints
+}
+
 // ApplyInstrumentation inserts race detection calls into the AST.
 //
 // This function performs the second pass of instrumentation: it takes
