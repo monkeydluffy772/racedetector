@@ -15,16 +15,16 @@ import (
 // (96%+) only need the epoch value, avoiding expensive vector clock operations.
 //
 // Layout:
-//   - TID: Thread/Goroutine ID (0-255 for MVP, uint8)
-//   - C: Full vector clock [256]uint32 tracking all threads
-//   - Epoch: Cached value of C[TID] as compact 32-bit epoch
+//   - TID: Thread/Goroutine ID (0-65535, uint16)
+//   - C: Full vector clock [65536]uint32 tracking all threads
+//   - Epoch: Cached value of C[TID] as compact 64-bit epoch
 //
 // Invariant: Epoch must ALWAYS equal epoch.NewEpoch(TID, C[TID]).
 // This invariant is maintained by IncrementClock() which atomically updates both.
 type RaceContext struct {
-	// TID is the thread/goroutine identifier (0-255).
-	// Fixed-size uint8 for MVP (256 concurrent goroutines max).
-	TID uint8
+	// TID is the thread/goroutine identifier (0-65535).
+	// 16-bit uint for production (65,536 concurrent goroutines max).
+	TID uint16
 
 	// C is the full vector clock tracking logical time for all threads.
 	// C[i] represents the logical time for thread i.
@@ -53,9 +53,9 @@ type RaceContext struct {
 //
 //	ctx := Alloc(5)
 //	// ctx.TID = 5
-//	// ctx.C = {0:0, 1:0, ..., 255:0}
+//	// ctx.C = {0:0, 1:0, ..., 65535:0}
 //	// ctx.Epoch = 0@5 (clock=0, tid=5)
-func Alloc(tid uint8) *RaceContext {
+func Alloc(tid uint16) *RaceContext {
 	ctx := &RaceContext{
 		TID: tid,
 		C:   vectorclock.New(),
@@ -93,7 +93,7 @@ func (rc *RaceContext) IncrementClock() {
 
 	// Step 2: Update the cached epoch to match C[TID].
 	// This maintains the invariant: Epoch == epoch.NewEpoch(TID, C[TID]).
-	rc.Epoch = epoch.NewEpoch(rc.TID, rc.C.Get(rc.TID))
+	rc.Epoch = epoch.NewEpoch(rc.TID, uint64(rc.C.Get(rc.TID)))
 }
 
 // GetEpoch returns the cached epoch for this goroutine.

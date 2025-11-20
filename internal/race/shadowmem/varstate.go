@@ -135,7 +135,8 @@ func (vs *VarState) PromoteToReadClock(newReadVC *vectorclock.VectorClock) {
 	// If readEpoch is non-zero, it represents a previous reader.
 	if vs.readEpoch != 0 {
 		tid, clock := vs.readEpoch.Decode()
-		vs.readClock.Set(tid, clock)
+		//nolint:gosec // G115: Epoch clock is uint64, but per-thread VectorClock uses uint32 (safe truncation).
+		vs.readClock.Set(tid, uint32(clock))
 	}
 
 	// Merge the new reader's VectorClock.

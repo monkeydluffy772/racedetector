@@ -10,66 +10,78 @@ import (
 func TestNewEpoch(t *testing.T) {
 	tests := []struct {
 		name      string
-		tid       uint8
-		clock     uint32
-		wantEpoch uint32
+		tid       uint16
+		clock     uint64
+		wantEpoch uint64
 	}{
 		{
 			name:      "zero epoch",
 			tid:       0,
 			clock:     0,
-			wantEpoch: 0x00000000,
+			wantEpoch: 0x0000000000000000,
 		},
 		{
 			name:      "tid only",
 			tid:       5,
 			clock:     0,
-			wantEpoch: 0x05000000,
+			wantEpoch: 0x0005000000000000,
 		},
 		{
 			name:      "clock only",
 			tid:       0,
 			clock:     0x1234,
-			wantEpoch: 0x00001234,
+			wantEpoch: 0x0000000000001234,
 		},
 		{
 			name:      "tid and clock",
 			tid:       42,
 			clock:     0x123456,
-			wantEpoch: 0x2A123456,
+			wantEpoch: 0x002A000000123456,
 		},
 		{
-			name:      "max tid",
-			tid:       255,
+			name:      "max tid (65535)",
+			tid:       65535,
 			clock:     0,
-			wantEpoch: 0xFF000000,
+			wantEpoch: 0xFFFF000000000000,
 		},
 		{
-			name:      "max clock (24-bit)",
+			name:      "max clock (48-bit)",
 			tid:       0,
-			clock:     0x00FFFFFF,
-			wantEpoch: 0x00FFFFFF,
+			clock:     0x0000FFFFFFFFFFFF,
+			wantEpoch: 0x0000FFFFFFFFFFFF,
 		},
 		{
 			name:      "max tid and max clock",
-			tid:       255,
-			clock:     0x00FFFFFF,
-			wantEpoch: 0xFFFFFFFF,
+			tid:       65535,
+			clock:     0x0000FFFFFFFFFFFF,
+			wantEpoch: 0xFFFFFFFFFFFFFFFF,
 		},
 		{
 			name:      "clock overflow (truncation)",
 			tid:       1,
-			clock:     0xFFFFFFFF, // Beyond 24 bits
-			wantEpoch: 0x01FFFFFF, // Should truncate to 24 bits
+			clock:     0xFFFFFFFFFFFFFFFF, // Beyond 48 bits
+			wantEpoch: 0x0001FFFFFFFFFFFF, // Should truncate to 48 bits
+		},
+		{
+			name:      "large tid (1000 goroutines)",
+			tid:       1000,
+			clock:     500000,
+			wantEpoch: 0x03E800000007A120,
+		},
+		{
+			name:      "very large clock (1 billion operations)",
+			tid:       10,
+			clock:     1000000000,
+			wantEpoch: 0x000A00003B9ACA00,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			got := NewEpoch(tt.tid, tt.clock)
-			if uint32(got) != tt.wantEpoch {
+			if uint64(got) != tt.wantEpoch {
 				t.Errorf("NewEpoch(%d, 0x%X) = 0x%X, want 0x%X",
-					tt.tid, tt.clock, uint32(got), tt.wantEpoch)
+					tt.tid, tt.clock, uint64(got), tt.wantEpoch)
 			}
 		})
 	}
@@ -80,50 +92,50 @@ func TestEpochDecode(t *testing.T) {
 	tests := []struct {
 		name      string
 		epoch     Epoch
-		wantTID   uint8
-		wantClock uint32
+		wantTID   uint16
+		wantClock uint64
 	}{
 		{
 			name:      "zero epoch",
-			epoch:     0x00000000,
+			epoch:     0x0000000000000000,
 			wantTID:   0,
 			wantClock: 0,
 		},
 		{
 			name:      "tid only",
-			epoch:     0x05000000,
+			epoch:     0x0005000000000000,
 			wantTID:   5,
 			wantClock: 0,
 		},
 		{
 			name:      "clock only",
-			epoch:     0x00001234,
+			epoch:     0x0000000000001234,
 			wantTID:   0,
 			wantClock: 0x1234,
 		},
 		{
 			name:      "tid and clock",
-			epoch:     0x2A123456,
+			epoch:     0x002A000000123456,
 			wantTID:   42,
 			wantClock: 0x123456,
 		},
 		{
-			name:      "max tid",
-			epoch:     0xFF000000,
-			wantTID:   255,
+			name:      "max tid (65535)",
+			epoch:     0xFFFF000000000000,
+			wantTID:   65535,
 			wantClock: 0,
 		},
 		{
-			name:      "max clock",
-			epoch:     0x00FFFFFF,
+			name:      "max clock (48-bit)",
+			epoch:     0x0000FFFFFFFFFFFF,
 			wantTID:   0,
-			wantClock: 0x00FFFFFF,
+			wantClock: 0x0000FFFFFFFFFFFF,
 		},
 		{
 			name:      "max epoch",
-			epoch:     0xFFFFFFFF,
-			wantTID:   255,
-			wantClock: 0x00FFFFFF,
+			epoch:     0xFFFFFFFFFFFFFFFF,
+			wantTID:   65535,
+			wantClock: 0x0000FFFFFFFFFFFF,
 		},
 	}
 
@@ -145,14 +157,15 @@ func TestEpochDecode(t *testing.T) {
 // TestEpochRoundTrip tests that NewEpoch and Decode are inverse operations.
 func TestEpochRoundTrip(t *testing.T) {
 	tests := []struct {
-		tid   uint8
-		clock uint32
+		tid   uint16
+		clock uint64
 	}{
 		{0, 0},
 		{1, 100},
 		{42, 0x123456},
-		{255, 0x00FFFFFF},
-		{128, 0x800000},
+		{65535, 0x0000FFFFFFFFFFFF},
+		{32768, 0x800000000},
+		{1000, 1000000000}, // 1000 goroutines, 1 billion operations
 	}
 
 	for _, tt := range tests {
@@ -160,7 +173,7 @@ func TestEpochRoundTrip(t *testing.T) {
 			epoch := NewEpoch(tt.tid, tt.clock)
 			gotTID, gotClock := epoch.Decode()
 
-			// Mask clock to 24 bits for comparison (handles overflow)
+			// Mask clock to 48 bits for comparison (handles overflow)
 			wantClock := tt.clock & ClockMask
 
 			if gotTID != tt.tid {
@@ -232,23 +245,33 @@ func TestEpochHappensBefore(t *testing.T) {
 		},
 		{
 			name:  "max tid happens-before",
-			epoch: NewEpoch(255, 100),
+			epoch: NewEpoch(65535, 100),
 			setup: func() *vectorclock.VectorClock {
 				vc := vectorclock.New()
-				vc.Set(255, 200)
+				vc.Set(65535, 200)
 				return vc
 			},
 			want: true,
 		},
 		{
 			name:  "max tid NOT happens-before",
-			epoch: NewEpoch(255, 100),
+			epoch: NewEpoch(65535, 100),
 			setup: func() *vectorclock.VectorClock {
 				vc := vectorclock.New()
-				vc.Set(255, 99)
+				vc.Set(65535, 99)
 				return vc
 			},
 			want: false,
+		},
+		{
+			name:  "large tid (1000 goroutines)",
+			epoch: NewEpoch(1000, 50000),
+			setup: func() *vectorclock.VectorClock {
+				vc := vectorclock.New()
+				vc.Set(1000, 100000)
+				return vc
+			},
+			want: true,
 		},
 		{
 			name:  "epoch with uninitialized vc entry",
@@ -311,8 +334,8 @@ func TestEpochSame(t *testing.T) {
 		},
 		{
 			name: "max epochs identical",
-			e1:   NewEpoch(255, 0x00FFFFFF),
-			e2:   NewEpoch(255, 0x00FFFFFF),
+			e1:   NewEpoch(65535, 0x0000FFFFFFFFFFFF),
+			e2:   NewEpoch(65535, 0x0000FFFFFFFFFFFF),
 			want: true,
 		},
 		{
@@ -367,7 +390,7 @@ func BenchmarkEpochDecode(b *testing.B) {
 func BenchmarkNewEpoch(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_ = NewEpoch(42, uint32(i)&ClockMask)
+		_ = NewEpoch(42, uint64(i)&ClockMask)
 	}
 }
 
@@ -406,13 +429,18 @@ func TestEpochString(t *testing.T) {
 		},
 		{
 			name:  "max tid",
-			epoch: NewEpoch(255, 100),
-			want:  "100@255",
+			epoch: NewEpoch(65535, 100),
+			want:  "100@65535",
 		},
 		{
-			name:  "max clock",
-			epoch: NewEpoch(1, 0x00FFFFFF),
-			want:  "16777215@1",
+			name:  "max clock (48-bit)",
+			epoch: NewEpoch(1, 0x0000FFFFFFFFFFFF),
+			want:  "281474976710655@1",
+		},
+		{
+			name:  "large tid (1000 goroutines)",
+			epoch: NewEpoch(1000, 500000),
+			want:  "500000@1000",
 		},
 	}
 

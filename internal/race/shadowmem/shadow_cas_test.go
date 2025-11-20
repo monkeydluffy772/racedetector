@@ -130,7 +130,7 @@ func TestCASBasedShadow_MultipleAddresses(t *testing.T) {
 		if !created {
 			t.Errorf("LoadOrStore(0x%x) should create new cell", addr)
 		}
-		vs.W = epoch.NewEpoch(uint8(i+1), uint32((i+1)*100))
+		vs.W = epoch.NewEpoch(uint16(i+1), uint64((i+1)*100))
 		cells[i] = vs
 	}
 
@@ -146,7 +146,7 @@ func TestCASBasedShadow_MultipleAddresses(t *testing.T) {
 			t.Errorf("Load(0x%x) returned different instance", addr)
 		}
 
-		expectedW := epoch.NewEpoch(uint8(i+1), uint32((i+1)*100))
+		expectedW := epoch.NewEpoch(uint16(i+1), uint64((i+1)*100))
 		if vs.W != expectedW {
 			t.Errorf("VarState[0x%x].W = %v, want %v", addr, vs.W, expectedW)
 		}
@@ -285,7 +285,7 @@ func TestCASBasedShadow_Collisions(t *testing.T) {
 		if !created {
 			t.Errorf("LoadOrStore(0x%x) should create new cell", addr)
 		}
-		vs.W = epoch.NewEpoch(1, uint32(i))
+		vs.W = epoch.NewEpoch(1, uint64(i))
 	}
 
 	// Verify all addresses can be retrieved correctly.
@@ -296,7 +296,7 @@ func TestCASBasedShadow_Collisions(t *testing.T) {
 			continue
 		}
 
-		expectedW := epoch.NewEpoch(1, uint32(i))
+		expectedW := epoch.NewEpoch(1, uint64(i))
 		if vs.W != expectedW {
 			t.Errorf("VarState[0x%x].W = %v, want %v (collision handling failed)", addr, vs.W, expectedW)
 		}
@@ -378,7 +378,7 @@ func TestCASBasedShadow_Concurrent_MultipleAddresses(t *testing.T) {
 				vs, _ := shadow.LoadOrStore(addr)
 
 				// Update the cell.
-				vs.W = epoch.NewEpoch(uint8(gid), uint32(j))
+				vs.W = epoch.NewEpoch(uint16(gid), uint64(j))
 			}
 		}(i)
 	}
@@ -525,7 +525,7 @@ func BenchmarkCASBasedShadow_Concurrent(b *testing.B) {
 		for pb.Next() {
 			addr := hotAddresses[i%len(hotAddresses)]
 			vs, _ := shadow.LoadOrStore(addr)
-			vs.W = epoch.NewEpoch(1, uint32(i))
+			vs.W = epoch.NewEpoch(1, uint64(i))
 			i++
 		}
 	})

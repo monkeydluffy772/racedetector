@@ -70,7 +70,7 @@ var (
 
 	// freeTIDs is a stack of available TIDs (0-255).
 	// Protected by tidPoolMu. TIDs are popped on allocation and pushed on free.
-	freeTIDs []uint8
+	freeTIDs []uint16
 
 	// tidPoolMu protects freeTIDs stack.
 	// Lock contention is minimal as allocations are rare relative to raceread/racewrite.
@@ -699,10 +699,10 @@ func initTIDPool() {
 	// Popping from end gives: 255, 254, ..., 1, 0
 	// But after Init removes TID 0, we get: 255, 254, ..., 1
 	// We want ascending allocation, so we reverse the order.
-	freeTIDs = make([]uint8, 256)
-	for i := 0; i < 256; i++ {
+	freeTIDs = make([]uint16, 65536)
+	for i := 0; i < 65536; i++ {
 		//nolint:gosec // G115: Safe conversion, i is always < 256
-		freeTIDs[i] = uint8(i) // Stack order: [0, 1, 2, ..., 255]
+		freeTIDs[i] = uint16(i) // Stack order: [0, 1, 2, ..., 255]
 	}
 }
 
@@ -726,7 +726,7 @@ func initTIDPool() {
 //
 // Returns:
 //   - uint8: Allocated TID (0-255)
-func allocTID() uint8 {
+func allocTID() uint16 {
 	tidPoolMu.Lock()
 
 	// Fast path: TID available in pool.
@@ -774,7 +774,7 @@ func allocTID() uint8 {
 //
 // Parameters:
 //   - tid: TID to return to the pool (0-255)
-func freeTID(tid uint8) {
+func freeTID(tid uint16) {
 	tidPoolMu.Lock()
 	defer tidPoolMu.Unlock()
 

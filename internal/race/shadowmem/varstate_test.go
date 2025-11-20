@@ -91,9 +91,9 @@ func TestVarStateReset(t *testing.T) {
 func TestVarStateReadWrite(t *testing.T) {
 	tests := []struct {
 		name     string
-		wTID     uint8
+		wTID     uint16
 		wClock   uint32
-		rTID     uint8
+		rTID     uint16
 		rClock   uint32
 		wantWStr string // Expected W.String() format.
 		wantRStr string // Expected R.String() format.
@@ -150,15 +150,15 @@ func TestVarStateReadWrite(t *testing.T) {
 			vs := NewVarState()
 
 			// Set W and readEpoch.
-			vs.W = epoch.NewEpoch(tt.wTID, tt.wClock)
-			vs.SetReadEpoch(epoch.NewEpoch(tt.rTID, tt.rClock))
+			vs.W = epoch.NewEpoch(tt.wTID, uint64(tt.wClock))
+			vs.SetReadEpoch(epoch.NewEpoch(tt.rTID, uint64(tt.rClock)))
 
 			// Verify W epoch.
 			wTID, wClock := vs.W.Decode()
 			if wTID != tt.wTID {
 				t.Errorf("W.TID = %d, want %d", wTID, tt.wTID)
 			}
-			if wClock != tt.wClock {
+			if wClock != uint64(tt.wClock) {
 				t.Errorf("W.Clock = %d, want %d", wClock, tt.wClock)
 			}
 
@@ -167,7 +167,7 @@ func TestVarStateReadWrite(t *testing.T) {
 			if rTID != tt.rTID {
 				t.Errorf("GetReadEpoch().TID = %d, want %d", rTID, tt.rTID)
 			}
-			if rClock != tt.rClock {
+			if rClock != uint64(tt.rClock) {
 				t.Errorf("GetReadEpoch().Clock = %d, want %d", rClock, tt.rClock)
 			}
 
@@ -326,8 +326,8 @@ func BenchmarkVarStateReadWrite(b *testing.B) {
 	b.ResetTimer()
 
 	for i := 0; i < b.N; i++ {
-		vs.W = epoch.NewEpoch(5, uint32(i))
-		vs.SetReadEpoch(epoch.NewEpoch(3, uint32(i)))
+		vs.W = epoch.NewEpoch(5, uint64(i))
+		vs.SetReadEpoch(epoch.NewEpoch(3, uint64(i)))
 	}
 }
 

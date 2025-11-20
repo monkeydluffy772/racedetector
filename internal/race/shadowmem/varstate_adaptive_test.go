@@ -207,7 +207,7 @@ func TestVarState_ConcurrentReads_1000Goroutines(t *testing.T) {
 	// Simulate 256 concurrent readers (max threads).
 	vc := vectorclock.New()
 	for tid := 0; tid < 256; tid++ {
-		vc.Set(uint8(tid), uint32(tid*10))
+		vc.Set(uint16(tid), uint32(tid*10))
 	}
 
 	vs.PromoteToReadClock(vc)
@@ -220,8 +220,8 @@ func TestVarState_ConcurrentReads_1000Goroutines(t *testing.T) {
 	rc := vs.GetReadClock()
 	for tid := 0; tid < 256; tid++ {
 		expected := uint32(tid * 10)
-		if rc.Get(uint8(tid)) != expected {
-			t.Errorf("ReadClock[%d] = %d, want %d", tid, rc.Get(uint8(tid)), expected)
+		if rc.Get(uint16(tid)) != expected {
+			t.Errorf("ReadClock[%d] = %d, want %d", tid, rc.Get(uint16(tid)), expected)
 		}
 	}
 
@@ -397,7 +397,7 @@ func TestVarState_PromoteZeroEpoch(t *testing.T) {
 	}
 
 	// Other threads should be 0.
-	for tid := uint8(0); tid < 255; tid++ {
+	for tid := uint16(0); tid < 65535; tid++ {
 		if tid != 5 && rc.Get(tid) != 0 {
 			t.Errorf("ReadClock[%d] = %d, want 0", tid, rc.Get(tid))
 		}
