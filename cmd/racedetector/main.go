@@ -26,7 +26,13 @@ import (
 	"os"
 )
 
-const version = "0.1.0"
+// version is set by GoReleaser at build time via -ldflags.
+// For development builds, it will be "dev".
+var (
+	version = "dev"
+	commit  = "none"
+	date    = "unknown"
+)
 
 func main() {
 	if len(os.Args) < 2 {
@@ -45,6 +51,8 @@ func main() {
 		testCommand(os.Args[2:])
 	case "version", "--version", "-v":
 		fmt.Printf("racedetector version %s\n", version)
+		fmt.Printf("  commit: %s\n", commit)
+		fmt.Printf("  built:  %s\n", date)
 	case "help", "--help", "-h":
 		printUsage()
 	default:
