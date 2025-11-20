@@ -14,7 +14,11 @@
 // - Memory cost: 4 bytes → 8 bytes per variable (acceptable for reliability).
 package epoch
 
-import "github.com/kolkov/racedetector/internal/race/vectorclock"
+import (
+	"sync/atomic"
+
+	"github.com/kolkov/racedetector/internal/race/vectorclock"
+)
 
 // Epoch is a 64-bit logical timestamp encoding both thread ID and clock value.
 // Layout: [TID:16][Clock:48]
@@ -39,15 +43,79 @@ const (
 
 	// ClockMask is the bitmask for extracting clock value (0x0000FFFFFFFFFFFF).
 	ClockMask = (1 << ClockBits) - 1
+
+	// MaxTID is the maximum thread ID value (65,535).
+	MaxTID = uint32((1 << TIDBits) - 1)
+
+	// MaxClock is the maximum clock value (281,474,976,710,655).
+	MaxClock = uint64((1 << ClockBits) - 1)
+
+	// MaxTIDWarning is the threshold for warning about TID approaching overflow (90% of max).
+	// 58,982 goroutines (90% of 65,536).
+	MaxTIDWarning = uint32((1 << TIDBits) * 9 / 10)
+
+	// MaxClockWarning is the threshold for warning about clock approaching overflow (90% of max).
+	// 253,327,479,039,589 operations (90% of 281 trillion).
+	MaxClockWarning = uint64((1 << ClockBits) * 9 / 10)
+)
+
+var (
+	// tidOverflowDetected is set to 1 when TID overflow is detected.
+	// Use atomic operations to access this flag.
+	tidOverflowDetected uint32
+
+	// clockOverflowDetected is set to 1 when clock overflow is detected.
+	// Use atomic operations to access this flag.
+	clockOverflowDetected uint32
+
+	// tidNearOverflow is set to 1 when TID reaches 90% threshold.
+	// Use atomic operations to access this flag.
+	tidNearOverflow uint32
+
+	// clockNearOverflow is set to 1 when clock reaches 90% threshold.
+	// Use atomic operations to access this flag.
+	clockNearOverflow uint32
 )
 
 // NewEpoch creates an epoch from thread ID and clock value.
 //
 // The TID is stored in the top 16 bits, clock in the bottom 48 bits.
-// Clock values beyond 48 bits are truncated (wraps at 281T, practically never happens).
+//
+// Overflow detection (v0.2.0 Task 5):
+// - If TID > MaxTID: Sets tidOverflowDetected flag and clamps to MaxTID.
+// - If clock > MaxClock: Sets clockOverflowDetected flag and clamps to MaxClock.
+// - At 90% thresholds: Sets warning flags for early detection.
+//
+// Clamping prevents wrap-around which causes false negatives (worse than false positives).
 //
 //go:nosplit
 func NewEpoch(tid uint16, clock uint64) Epoch {
+	// Convert tid to uint32 for comparison with MaxTID constant.
+	tid32 := uint32(tid)
+
+	// Check for TID overflow.
+	// Note: Since tid is uint16, it cannot exceed MaxTID (65,535).
+	// This check is defensive for future changes (e.g., dynamic TID mapping in v0.4).
+	if tid32 > MaxTID {
+		atomic.StoreUint32(&tidOverflowDetected, 1)
+		tid = uint16(MaxTID) // Clamp to max (prevents wrap-around).
+		tid32 = MaxTID
+	}
+
+	// Check for clock overflow.
+	if clock > MaxClock {
+		atomic.StoreUint32(&clockOverflowDetected, 1)
+		clock = MaxClock // Clamp to max.
+	}
+
+	// Warn at 90% threshold (early warning).
+	if tid32 > MaxTIDWarning {
+		atomic.StoreUint32(&tidNearOverflow, 1)
+	}
+	if clock > MaxClockWarning {
+		atomic.StoreUint32(&clockNearOverflow, 1)
+	}
+
 	return Epoch(uint64(tid)<<ClockBits | (clock & ClockMask))
 }
 
@@ -122,4 +190,53 @@ func itoa64(n uint64) string {
 	}
 
 	return string(buf)
+}
+
+// CheckOverflows returns the current state of overflow detection flags.
+//
+// This function is called periodically by the detector to check if any
+// overflow or warning thresholds have been reached.
+//
+// Returns:
+//   - tidOverflow: true if TID overflow was detected (TID > MaxTID)
+//   - clockOverflow: true if clock overflow was detected (clock > MaxClock)
+//   - tidWarning: true if TID reached 90% threshold
+//   - clockWarning: true if clock reached 90% threshold
+//
+// Thread Safety: Safe for concurrent calls (uses atomic loads).
+//
+// Example:
+//
+//	tidOverflow, clockOverflow, tidWarning, clockWarning := epoch.CheckOverflows()
+//	if tidOverflow {
+//	    fmt.Fprintf(os.Stderr, "CRITICAL: TID overflow detected!\n")
+//	}
+func CheckOverflows() (tidOverflow, clockOverflow, tidWarning, clockWarning bool) {
+	return atomic.LoadUint32(&tidOverflowDetected) == 1,
+		atomic.LoadUint32(&clockOverflowDetected) == 1,
+		atomic.LoadUint32(&tidNearOverflow) == 1,
+		atomic.LoadUint32(&clockNearOverflow) == 1
+}
+
+// ResetOverflowFlags clears all overflow detection flags.
+//
+// This is primarily used in testing to reset the overflow state between test cases.
+// In production, overflow flags are typically never reset since overflow is a critical
+// condition that should persist for the lifetime of the program.
+//
+// Thread Safety: Safe for concurrent calls (uses atomic stores).
+//
+// Example:
+//
+//	// In test setup
+//	epoch.ResetOverflowFlags()
+//	// Run test that triggers overflow
+//	e := epoch.NewEpoch(70000, 1000)
+//	tidOverflow, _, _, _ := epoch.CheckOverflows()
+//	assert.True(t, tidOverflow)
+func ResetOverflowFlags() {
+	atomic.StoreUint32(&tidOverflowDetected, 0)
+	atomic.StoreUint32(&clockOverflowDetected, 0)
+	atomic.StoreUint32(&tidNearOverflow, 0)
+	atomic.StoreUint32(&clockNearOverflow, 0)
 }

@@ -454,3 +454,153 @@ func TestEpochString(t *testing.T) {
 		})
 	}
 }
+
+// TestTIDOverflow tests TID overflow detection and clamping (v0.2.0 Task 5).
+func TestTIDOverflow(t *testing.T) {
+	// Reset flags before test.
+	ResetOverflowFlags()
+
+	// Since TID is uint16, we cannot actually pass a value > MaxTID (65535).
+	// This test verifies that values at MaxTID work correctly without overflow.
+	e := NewEpoch(uint16(MaxTID), 1000)
+
+	// Should NOT trigger overflow (MaxTID is valid).
+	tidOverflow, _, _, _ := CheckOverflows() //nolint:dogsled // Only checking tidOverflow in this test
+	if tidOverflow {
+		t.Errorf("TID at MaxTID (%d) should NOT trigger overflow", MaxTID)
+	}
+
+	// Verify epoch is correctly created.
+	tid, clock := e.Decode()
+	if uint32(tid) != MaxTID {
+		t.Errorf("NewEpoch(MaxTID, 1000).TID() = %d, want %d", tid, MaxTID)
+	}
+	if clock != 1000 {
+		t.Errorf("NewEpoch(MaxTID, 1000).Clock() = %d, want 1000", clock)
+	}
+}
+
+// TestClockOverflow tests clock overflow detection and clamping (v0.2.0 Task 5).
+func TestClockOverflow(t *testing.T) {
+	// Reset flags before test.
+	ResetOverflowFlags()
+
+	// Trigger clock overflow by passing MaxClock + 1.
+	e := NewEpoch(1, MaxClock+1)
+
+	// Check overflow flag is set.
+	_, clockOverflow, _, _ := CheckOverflows() //nolint:dogsled // Only checking clockOverflow in this test
+	if !clockOverflow {
+		t.Errorf("Clock overflow should be detected for clock > MaxClock (%d)", MaxClock)
+	}
+
+	// Clock should be clamped to MaxClock (not wrapped to 0).
+	_, clock := e.Decode()
+	if clock != MaxClock {
+		t.Errorf("NewEpoch(1, MaxClock+1).Clock() = %d, want %d (clamped)", clock, MaxClock)
+	}
+}
+
+// TestTIDWarning tests TID warning threshold (90% of max) (v0.2.0 Task 5).
+func TestTIDWarning(t *testing.T) {
+	// Reset flags before test.
+	ResetOverflowFlags()
+
+	// Trigger warning threshold (90% of MaxTID).
+	_ = NewEpoch(uint16(MaxTIDWarning+1), 1000)
+
+	// Check warning flag is set.
+	tidOverflow, _, tidWarning, _ := CheckOverflows()
+	if !tidWarning {
+		t.Errorf("TID warning should trigger at 90%% threshold (%d)", MaxTIDWarning)
+	}
+
+	// Should NOT have triggered overflow yet.
+	if tidOverflow {
+		t.Errorf("TID overflow should NOT trigger at warning threshold")
+	}
+}
+
+// TestClockWarning tests clock warning threshold (90% of max) (v0.2.0 Task 5).
+func TestClockWarning(t *testing.T) {
+	// Reset flags before test.
+	ResetOverflowFlags()
+
+	// Trigger warning threshold (90% of MaxClock).
+	_ = NewEpoch(1, MaxClockWarning+1)
+
+	// Check warning flag is set.
+	_, clockOverflow, _, clockWarning := CheckOverflows()
+	if !clockWarning {
+		t.Errorf("Clock warning should trigger at 90%% threshold (%d)", MaxClockWarning)
+	}
+
+	// Should NOT have triggered overflow yet.
+	if clockOverflow {
+		t.Errorf("Clock overflow should NOT trigger at warning threshold")
+	}
+}
+
+// TestResetOverflowFlags tests that overflow flags can be reset (v0.2.0 Task 5).
+func TestResetOverflowFlags(t *testing.T) {
+	// Set all flags by triggering overflows.
+	_ = NewEpoch(1, MaxClock+1)                 // Clock overflow
+	_ = NewEpoch(uint16(MaxTIDWarning+1), 1000) // TID warning
+
+	// Verify flags are set.
+	_, clockOverflow, tidWarning, clockWarning := CheckOverflows()
+	if !clockOverflow {
+		t.Errorf("Clock overflow should be set before reset")
+	}
+	if !tidWarning {
+		t.Errorf("TID warning should be set before reset")
+	}
+	if !clockWarning {
+		t.Errorf("Clock warning should be set before reset")
+	}
+
+	// Reset flags.
+	ResetOverflowFlags()
+
+	// Verify all flags are cleared.
+	tidOverflow, clockOverflow, tidWarning, clockWarning := CheckOverflows()
+	if tidOverflow || clockOverflow || tidWarning || clockWarning {
+		t.Errorf("After reset, all flags should be false, got: tidOverflow=%v, clockOverflow=%v, tidWarning=%v, clockWarning=%v",
+			tidOverflow, clockOverflow, tidWarning, clockWarning)
+	}
+}
+
+// TestOverflowConstants verifies overflow detection constants are correct (v0.2.0 Task 5).
+func TestOverflowConstants(t *testing.T) {
+	// Verify MaxTID calculation.
+	expectedMaxTID := uint32((1 << TIDBits) - 1) // 65,535
+	if MaxTID != expectedMaxTID {
+		t.Errorf("MaxTID = %d, want %d", MaxTID, expectedMaxTID)
+	}
+
+	// Verify MaxClock calculation.
+	expectedMaxClock := uint64((1 << ClockBits) - 1) // 281,474,976,710,655
+	if MaxClock != expectedMaxClock {
+		t.Errorf("MaxClock = %d, want %d", MaxClock, expectedMaxClock)
+	}
+
+	// Verify MaxTIDWarning is 90% of MaxTID.
+	expectedMaxTIDWarning := uint32((1 << TIDBits) * 9 / 10) // 58,982
+	if MaxTIDWarning != expectedMaxTIDWarning {
+		t.Errorf("MaxTIDWarning = %d, want %d (90%% of MaxTID)", MaxTIDWarning, expectedMaxTIDWarning)
+	}
+
+	// Verify MaxClockWarning is 90% of MaxClock.
+	expectedMaxClockWarning := uint64((1 << ClockBits) * 9 / 10) // 253,327,479,039,589
+	if MaxClockWarning != expectedMaxClockWarning {
+		t.Errorf("MaxClockWarning = %d, want %d (90%% of MaxClock)", MaxClockWarning, expectedMaxClockWarning)
+	}
+
+	// Verify warning thresholds are less than max values.
+	if MaxTIDWarning >= MaxTID {
+		t.Errorf("MaxTIDWarning (%d) should be less than MaxTID (%d)", MaxTIDWarning, MaxTID)
+	}
+	if MaxClockWarning >= MaxClock {
+		t.Errorf("MaxClockWarning (%d) should be less than MaxClock (%d)", MaxClockWarning, MaxClock)
+	}
+}
