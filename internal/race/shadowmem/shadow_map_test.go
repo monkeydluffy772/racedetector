@@ -389,7 +389,7 @@ func TestShadowMemoryConcurrent_ReadWrite(t *testing.T) {
 
 				// GetOrCreate and update.
 				vs := sm.GetOrCreate(addr)
-				vs.W = epoch.NewEpoch(uint16(goroutineID), uint32(op))
+				vs.W = epoch.NewEpoch(uint16(goroutineID), uint64(op))
 
 				// Sometimes just read.
 				if op%3 == 0 {

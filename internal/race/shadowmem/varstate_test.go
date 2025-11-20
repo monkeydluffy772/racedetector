@@ -10,17 +10,18 @@ import (
 // TestVarStateSize verifies that VarState has expected size.
 // Phase 3: 24 bytes (W + mu + readEpoch + readClock pointer).
 // v0.2.0 Task 3 (SmartTrack): 40 bytes (adds exclusiveWriter int64 + writeCount uint32 + padding).
-// This is larger than Phase 3 (24 bytes) due to ownership tracking.
-// Trade-off: +16 bytes per VarState for 10-20% HB check reduction (SmartTrack PLDI 2020).
+// v0.2.0 Task 4 (64-bit Epoch): 48 bytes (W changed from uint32 to uint64, adds 8 bytes).
+// This is larger than Task 3 (40 bytes) due to 64-bit Epoch support.
+// Trade-off: +8 bytes per VarState for 48-bit clock support (281T operations vs 16M).
 func TestVarStateSize(t *testing.T) {
-	const expectedSize = 40 // W(4) + mu(8) + readEpoch(4) + readClock(8) + exclusiveWriter(8) + writeCount(4) + padding(4)
+	const expectedSize = 48 // W(8) + mu(8) + readEpoch(8) + readClock(8) + exclusiveWriter(8) + writeCount(4) + padding(4)
 	actualSize := unsafe.Sizeof(VarState{})
 
 	if actualSize != expectedSize {
 		t.Errorf("VarState size = %d bytes, want %d bytes (W + mu + readEpoch + pointer + ownership fields)", actualSize, expectedSize)
 	}
 
-	t.Logf("VarState size: %d bytes (adaptive representation + race-safe + SmartTrack ownership)", actualSize)
+	t.Logf("VarState size: %d bytes (64-bit Epoch + adaptive representation + race-safe + SmartTrack ownership)", actualSize)
 }
 
 // TestVarStateNewZero verifies that NewVarState creates a zero-initialized state.

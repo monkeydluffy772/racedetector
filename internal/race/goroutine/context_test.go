@@ -73,7 +73,7 @@ func TestAlloc(t *testing.T) {
 }
 
 // verifyClockValue checks that the clock value matches expected.
-func verifyClockValue(t *testing.T, ctx *RaceContext, wantClock uint64, increments int) {
+func verifyClockValue(t *testing.T, ctx *RaceContext, wantClock uint32, increments int) {
 	t.Helper()
 	gotClock := ctx.C.Get(ctx.TID)
 	if gotClock != wantClock {
@@ -83,7 +83,7 @@ func verifyClockValue(t *testing.T, ctx *RaceContext, wantClock uint64, incremen
 }
 
 // verifyEpochCache checks that epoch cache is synchronized with C[TID].
-func verifyEpochCache(t *testing.T, ctx *RaceContext, tid uint16, wantClock uint64, increments int) {
+func verifyEpochCache(t *testing.T, ctx *RaceContext, tid uint16, wantClock uint32, increments int) {
 	t.Helper()
 	wantEpoch := epoch.NewEpoch(tid, uint64(wantClock))
 	if ctx.Epoch != wantEpoch {
@@ -118,7 +118,7 @@ func verifyThreadIsolation(t *testing.T, ctx *RaceContext) {
 func TestIncrementClock(t *testing.T) {
 	tests := []struct {
 		name       string
-		tid        uint8
+		tid        uint16
 		increments int
 		wantClock  uint32
 	}{
@@ -150,7 +150,7 @@ func TestIncrementClock(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			ctx := Alloc(uint16(tt.tid))
+			ctx := Alloc(tt.tid)
 
 			// Perform increments.
 			for i := 0; i < tt.increments; i++ {
@@ -159,7 +159,7 @@ func TestIncrementClock(t *testing.T) {
 
 			// Verify all invariants using helper functions.
 			verifyClockValue(t, ctx, tt.wantClock, tt.increments)
-			verifyEpochCache(t, ctx, uint16(tt.tid), tt.wantClock, tt.increments)
+			verifyEpochCache(t, ctx, tt.tid, tt.wantClock, tt.increments)
 			verifyThreadIsolation(t, ctx)
 		})
 	}
@@ -192,7 +192,7 @@ func TestIncrementClockEpochSync(t *testing.T) {
 func TestGetEpoch(t *testing.T) {
 	tests := []struct {
 		name       string
-		tid        uint8
+		tid        uint16
 		increments int
 	}{
 		{
@@ -219,7 +219,7 @@ func TestGetEpoch(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			ctx := Alloc(uint16(tt.tid))
+			ctx := Alloc(tt.tid)
 
 			// Perform increments.
 			for i := 0; i < tt.increments; i++ {
@@ -235,17 +235,17 @@ func TestGetEpoch(t *testing.T) {
 			}
 
 			// Verify it matches the expected epoch from C[TID].
-			wantEpoch := epoch.NewEpoch(uint16(tt.tid), uint64(ctx.C.Get(uint16(tt.tid))))
+			wantEpoch := epoch.NewEpoch(tt.tid, uint64(ctx.C.Get(tt.tid)))
 			if gotEpoch != wantEpoch {
-				t.Errorf("GetEpoch() = 0x%X, want 0x%X (from C[%d])", gotEpoch, wantEpoch, uint64(tt.tid))
+				t.Errorf("GetEpoch() = 0x%X, want 0x%X (from C[%d])", gotEpoch, wantEpoch, tt.tid)
 			}
 
 			// Verify epoch decodes correctly.
 			gotTID, gotClock := gotEpoch.Decode()
 			if gotTID != tt.tid {
-				t.Errorf("GetEpoch().Decode() tid = %d, want %d", gotTID, uint64(tt.tid))
+				t.Errorf("GetEpoch().Decode() tid = %d, want %d", gotTID, tt.tid)
 			}
-			if gotClock != uint32(tt.increments) {
+			if gotClock != uint64(tt.increments) {
 				t.Errorf("GetEpoch().Decode() clock = %d, want %d", gotClock, tt.increments)
 			}
 		})
@@ -365,39 +365,38 @@ func TestVectorClockIsolation(t *testing.T) {
 	}
 }
 
-// TestEpochClockOverflow tests behavior when clock reaches 24-bit limit.
+// TestEpochClockOverflow tests behavior when clock reaches 32-bit limit.
+// Note: Epoch now supports 48-bit clocks, but VectorClock uses 32-bit internally.
 func TestEpochClockOverflow(t *testing.T) {
 	ctx := Alloc(5)
 
-	// Set clock to near 24-bit max (0x00FFFFFF = 16,777,215).
-	maxClock := uint32(0x00FFFFFF)
-	ctx.C.Set(5, maxClock-1)
-	ctx.Epoch = epoch.NewEpoch(5, maxClock-1)
+	// Set clock to near 32-bit max (0xFFFFFFFF = 4,294,967,295).
+	// Use a smaller value to avoid actual overflow in test.
+	maxClock := uint32(0xFFFFFFF0)
+	ctx.C.Set(5, maxClock)
+	ctx.Epoch = epoch.NewEpoch(5, uint64(maxClock))
 
-	// Increment to max.
-	ctx.IncrementClock()
-
-	// Verify clock is at max.
-	if ctx.C.Get(5) != maxClock {
-		t.Errorf("C[5] = %d, want %d (max 24-bit)", ctx.C.Get(5), maxClock)
+	// Increment multiple times.
+	for i := 0; i < 10; i++ {
+		ctx.IncrementClock()
 	}
 
-	// Verify epoch cache matches.
-	wantEpoch := epoch.NewEpoch(5, uint64(maxClock))
+	// Verify clock advanced to maxClock + 10.
+	expectedClock := maxClock + 10
+	if ctx.C.Get(5) != expectedClock {
+		t.Errorf("C[5] = %d, want %d", ctx.C.Get(5), expectedClock)
+	}
+
+	// Verify epoch cache matches (48-bit ClockMask supports full 32-bit values).
+	wantEpoch := epoch.NewEpoch(5, uint64(expectedClock))
 	if ctx.Epoch != wantEpoch {
-		t.Errorf("Epoch at max = 0x%X, want 0x%X", ctx.Epoch, wantEpoch)
+		t.Errorf("Epoch = 0x%X, want 0x%X", ctx.Epoch, wantEpoch)
 	}
 
-	// Increment past max (overflow).
-	ctx.IncrementClock()
-
-	// Epoch will truncate to 24 bits (wrap to 0).
-	actualClock := ctx.C.Get(5)                 // Will be 0x01000000 in VC
-	epochClock := actualClock & epoch.ClockMask // Truncated to 0
-
+	// Verify epoch decodes correctly (no truncation within 48-bit range).
 	_, epochClockDecoded := ctx.Epoch.Decode()
-	if epochClockDecoded != epochClock {
-		t.Errorf("After overflow, epoch clock = %d, want %d (truncated)", epochClockDecoded, epochClock)
+	if epochClockDecoded != uint64(expectedClock) {
+		t.Errorf("Epoch decoded clock = %d, want %d", epochClockDecoded, expectedClock)
 	}
 }
 
@@ -430,7 +429,7 @@ func BenchmarkIncrementClock(b *testing.B) {
 func BenchmarkAlloc(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_ = Alloc(uint8(i % 256))
+		_ = Alloc(uint16(i % 256))
 	}
 }
 

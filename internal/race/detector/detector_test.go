@@ -399,7 +399,7 @@ func TestHappensBeforeWrite(t *testing.T) {
 	tests := []struct {
 		name       string
 		prevWrite  epoch.Epoch
-		currClock  uint32
+		currClock  uint64
 		wantResult bool
 	}{
 		{
@@ -426,7 +426,7 @@ func TestHappensBeforeWrite(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			// Setup context with specified clock.
 			ctx := goroutine.Alloc(1)
-			ctx.C.Set(1, tt.currClock)
+			ctx.C.Set(1, uint32(tt.currClock))
 			ctx.Epoch = epoch.NewEpoch(1, tt.currClock)
 
 			result := d.happensBeforeWrite(tt.prevWrite, ctx)
@@ -446,7 +446,7 @@ func TestHappensBeforeRead(t *testing.T) {
 	tests := []struct {
 		name       string
 		prevRead   epoch.Epoch
-		currClock  uint32
+		currClock  uint64
 		wantResult bool
 	}{
 		{
@@ -466,7 +466,7 @@ func TestHappensBeforeRead(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			ctx := goroutine.Alloc(1)
-			ctx.C.Set(1, tt.currClock)
+			ctx.C.Set(1, uint32(tt.currClock))
 			ctx.Epoch = epoch.NewEpoch(1, tt.currClock)
 
 			result := d.happensBeforeRead(tt.prevRead, ctx)

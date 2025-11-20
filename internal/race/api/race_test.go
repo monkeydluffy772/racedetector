@@ -177,8 +177,8 @@ func TestGetCurrentContext_Concurrent(t *testing.T) {
 
 	// Launch 100 goroutines concurrently.
 	var wg sync.WaitGroup
-	contexts := make([]uint8, numGoroutines) // Store TIDs instead of contexts
-	tids := make([]uint8, numGoroutines)
+	contexts := make([]uint16, numGoroutines) // Store TIDs instead of contexts
+	tids := make([]uint16, numGoroutines)
 
 	for i := 0; i < numGoroutines; i++ {
 		wg.Add(1)
@@ -195,9 +195,9 @@ func TestGetCurrentContext_Concurrent(t *testing.T) {
 	// All contexts should have been allocated (TIDs should be set).
 	// This is verified by TID uniqueness check below.
 
-	// Verify TIDs are unique (within uint8 range 0-255).
+	// Verify TIDs are unique (within uint16 range 0-65535).
 	// Since we have 100 goroutines, all should be unique.
-	tidSet := make(map[uint8]bool)
+	tidSet := make(map[uint16]bool)
 	for i, tid := range tids {
 		if tidSet[tid] {
 			t.Errorf("Duplicate TID %d at index %d", tid, i)
@@ -218,7 +218,7 @@ func TestGetCurrentContext_TIDPoolAllocation(t *testing.T) {
 
 	// Allocate 5 contexts in new goroutines.
 	// With TID pool, they should get TIDs: 0, 1, 2, 3, 4 (sequential from pool).
-	tids := make([]uint8, 5)
+	tids := make([]uint16, 5)
 	var wg sync.WaitGroup
 
 	for i := 0; i < 5; i++ {
@@ -234,8 +234,8 @@ func TestGetCurrentContext_TIDPoolAllocation(t *testing.T) {
 	wg.Wait()
 
 	// Expected TIDs: 0, 1, 2, 3, 4 (in some order due to concurrency).
-	// With TID pool initialized to [0, 1, 2, ..., 255], we allocate from front (FIFO).
-	expected := map[uint8]bool{0: true, 1: true, 2: true, 3: true, 4: true}
+	// With TID pool initialized to [0, 1, 2, ..., 65535], we allocate from front (FIFO).
+	expected := map[uint16]bool{0: true, 1: true, 2: true, 3: true, 4: true}
 	for i, tid := range tids {
 		if !expected[tid] {
 			t.Errorf("TID at index %d = %d, expected one of {0, 1, 2, 3, 4}", i, tid)
@@ -243,7 +243,7 @@ func TestGetCurrentContext_TIDPoolAllocation(t *testing.T) {
 	}
 
 	// Verify all TIDs are unique.
-	tidSet := make(map[uint8]bool)
+	tidSet := make(map[uint16]bool)
 	for _, tid := range tids {
 		if tidSet[tid] {
 			t.Errorf("Duplicate TID %d", tid)
@@ -519,7 +519,7 @@ func TestMultipleGoroutinesUniqueContexts(t *testing.T) {
 	Reset()
 
 	const numGoroutines = 20
-	tids := make([]uint8, numGoroutines)
+	tids := make([]uint16, numGoroutines)
 	var wg sync.WaitGroup
 
 	for i := 0; i < numGoroutines; i++ {
@@ -535,7 +535,7 @@ func TestMultipleGoroutinesUniqueContexts(t *testing.T) {
 	wg.Wait()
 
 	// Verify all TIDs are unique.
-	tidSet := make(map[uint8]bool)
+	tidSet := make(map[uint16]bool)
 	for i, tid := range tids {
 		if tidSet[tid] {
 			t.Errorf("TID %d at index %d is duplicate", tid, i)
@@ -717,7 +717,7 @@ func TestInitMainGoroutineTID(t *testing.T) {
 	}
 
 	// Spawn a new goroutine - should get TID=1 (or higher).
-	var spawnedTID uint8
+	var spawnedTID uint16
 	done := make(chan bool)
 	go func() {
 		spawnedCtx := getCurrentContext()

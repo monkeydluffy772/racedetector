@@ -64,8 +64,8 @@ func BenchmarkComparison_ContextAllocation(b *testing.B) {
 		b.ReportAllocs()
 
 		for i := 0; i < b.N; i++ {
-			// Simulate Phase 1 TID allocation (simple counter, wraps at 256)
-			tid := uint8(nextTID.Add(1) % 256)
+			// Simulate Phase 1 TID allocation (simple counter, wraps at 65536)
+			tid := uint16(nextTID.Add(1) % 65536)
 			_ = goroutine.Alloc(tid)
 		}
 	})
@@ -330,7 +330,7 @@ func BenchmarkComparison_FirstContextCreation(b *testing.B) {
 			b.StartTimer()
 			// Simulate Phase 1: slow GID
 			gid := getGoroutineIDSlow()
-			tid := uint8(nextTID.Add(1) % 256)
+			tid := uint16(nextTID.Add(1) % 256)
 			ctx := goroutine.Alloc(tid)
 			contexts.Store(gid, ctx)
 			b.StopTimer()
@@ -362,7 +362,7 @@ func BenchmarkComparison_CachedContextLookup(b *testing.B) {
 
 		// Pre-create context
 		gid := getGoroutineIDSlow()
-		tid := uint8(0)
+		tid := uint16(0)
 		ctx := goroutine.Alloc(tid)
 		contexts.Store(gid, ctx)
 
@@ -408,7 +408,7 @@ func BenchmarkComparison_TIDAllocation(b *testing.B) {
 
 		for i := 0; i < b.N; i++ {
 			// Phase 1: simple atomic counter
-			_ = uint8(nextTID.Add(1) % 256)
+			_ = uint16(nextTID.Add(1) % 256)
 		}
 	})
 
@@ -419,7 +419,7 @@ func BenchmarkComparison_TIDAllocation(b *testing.B) {
 		b.ResetTimer()
 		b.ReportAllocs()
 
-		tids := make([]uint8, 0, b.N)
+		tids := make([]uint16, 0, b.N)
 		for i := 0; i < b.N; i++ {
 			tid := allocTID()
 			tids = append(tids, tid)

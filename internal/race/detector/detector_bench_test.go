@@ -97,7 +97,7 @@ func BenchmarkOnWrite_WithRace(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		// Set previous write to future epoch to trigger race.
 		vs.W = epoch.NewEpoch(1, 1000000)
-		ctx.C.Set(1, uint64(i))
+		ctx.C.Set(1, uint32(i))
 		ctx.Epoch = epoch.NewEpoch(1, uint64(i))
 
 		d.OnWrite(addr, ctx)
@@ -344,7 +344,7 @@ func BenchmarkOnRead_WithRace(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		// Set previous write to future epoch to trigger race.
 		vs.W = epoch.NewEpoch(1, 1000000)
-		ctx.C.Set(1, uint64(i))
+		ctx.C.Set(1, uint32(i))
 		ctx.Epoch = epoch.NewEpoch(1, uint64(i))
 
 		d.OnRead(addr, ctx)
