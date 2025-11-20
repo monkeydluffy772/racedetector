@@ -136,36 +136,50 @@ Previous Write at 0x000000c00000a0b8 by goroutine 3:
 
 ### **v0.2.0 - Runtime Enhancements** (December 2025) [PLANNED]
 
-**Goal**: Improve race reports and handle edge cases
+**Goal**: Improve race reports and optimize performance (target: <10x overhead)
 
 **Duration**: 2-3 weeks
 
-**Planned Features**:
-1. **Better Stack Traces** (P1 - Important)
+**Planned Performance Optimizations**:
+
+1. **Lock-Free Shadow Memory** (P0 - Critical)
+   - Replace sync.Map with atomic Compare-And-Swap approach
+   - Target: Zero allocations on hot path
+   - Expected: Significant reduction in memory overhead
+
+2. **BigFoot Static Coalescing** (P0 - Critical)
+   - Based on "Effective Race Detection for Event-Driven Programs" (PLDI 2017)
+   - Coalesce consecutive memory operations at AST level
+   - Technique: 3 consecutive writes → 1 barrier
+   - Expected: 40-60% reduction in instrumentation overhead
+
+3. **SmartTrack Ownership Tracking** (P1 - Important)
+   - Based on "SmartTrack: Efficient Predictive Race Detection" (PLDI 2020)
+   - Track exclusive writer to skip unnecessary happens-before checks
+   - Single-writer optimization for common patterns
+   - Expected: 10-20% reduction in comparison overhead
+
+**Traditional Features**:
+
+4. **Better Stack Traces** (P1 - Important)
    - Full call chain (not just current access)
    - Source code snippets (±2 lines)
    - Match Go official race detector format
 
-2. **Edge Case Handling** (P1 - Important)
+5. **Edge Case Handling** (P2 - Optional)
    - Select statements with memory accesses
    - Type switches on race-able variables
    - Goroutine spawn with closures
 
-3. **Performance Optimizations** (P1 - Important)
-   - Parallel file processing for multi-file projects
-   - Faster AST transformation (<100ms per 1000 lines)
-   - Profiling and hot path optimization
-
-4. **Reduce Overhead** (P2 - Optional)
-   - Skip read-only variables (static analysis)
-   - Sampling for hot loops (configurable)
-   - 30% fewer instrumentation points
-
 **Quality Targets**:
+- ✅ <10x overhead (vs current 5-15x)
+- ✅ Zero allocations on hot path
 - ✅ Stack traces match official Go race detector
-- ✅ <100ms instrumentation per 1000 lines
-- ✅ Edge cases handled without false positives
 - ✅ 80%+ test coverage
+
+**Academic References**:
+- Jake Roemer, Kaan Genç, Michael D. Bond. "Effective Race Detection for Event-Driven Programs." PLDI 2017.
+- Jake Roemer, Kaan Genç, Michael D. Bond. "SmartTrack: Efficient Predictive Race Detection." PLDI 2020.
 
 **Target**: December 15, 2025
 
