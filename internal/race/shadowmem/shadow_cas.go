@@ -46,7 +46,7 @@ type CASCell struct {
 //
 // Thread Safety: All operations are lock-free and safe for concurrent access.
 //
-// See design document: docs/dev/v0.2.0-cas-shadow-memory-design.md
+// See design document: docs/dev/v0.2.0-cas-shadow-memory-design.md.
 type CASBasedShadow struct {
 	// Fixed-size array of atomic pointers to CASCell.
 	// Using atomic.Pointer provides type-safe CAS operations (Go 1.19+).

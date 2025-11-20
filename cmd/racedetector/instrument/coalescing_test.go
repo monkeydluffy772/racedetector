@@ -440,10 +440,10 @@ func main() {
 // TestCoalescingAnalyzer_NoCoalescing tests scenarios where coalescing should NOT happen.
 func TestCoalescingAnalyzer_NoCoalescing(t *testing.T) {
 	tests := []struct {
-		name          string
-		code          string
+		name           string
+		code           string
 		expectedGroups int
-		reason        string
+		reason         string
 	}{
 		{
 			name: "Control flow breaks coalescing",
@@ -457,7 +457,7 @@ func main() {
     x = 3
 }`,
 			expectedGroups: 0, // Control flow prevents coalescing
-			reason:        "if statement breaks consecutive sequence",
+			reason:         "if statement breaks consecutive sequence",
 		},
 		{
 			name: "Function call breaks coalescing",
@@ -470,7 +470,7 @@ func main() {
     x = 2
 }`,
 			expectedGroups: 0, // Function call may have side effects
-			reason:        "function call breaks consecutive sequence",
+			reason:         "function call breaks consecutive sequence",
 		},
 		{
 			name: "Single operation no coalescing",
@@ -480,7 +480,7 @@ func main() {
     x = 1
 }`,
 			expectedGroups: 0, // Only 1 operation (need 2+ for coalescing)
-			reason:        "single operation has no coalescing benefit",
+			reason:         "single operation has no coalescing benefit",
 		},
 	}
 
@@ -608,11 +608,11 @@ func main() {
 // TestGetCoalescingReduction tests reduction percentage calculation.
 func TestGetCoalescingReduction(t *testing.T) {
 	tests := []struct {
-		name                string
-		totalOps            int
-		coalescedOps        int
-		groups              int
-		expectedReduction   float64
+		name              string
+		totalOps          int
+		coalescedOps      int
+		groups            int
+		expectedReduction float64
 	}{
 		{
 			name:              "60% reduction (PLDI 2017 target)",

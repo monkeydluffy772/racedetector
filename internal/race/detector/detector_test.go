@@ -334,6 +334,7 @@ func TestRacesDetected(t *testing.T) {
 	addr := uintptr(0xB000)
 	vs := d.shadowMemory.GetOrCreate(addr)
 	vs.W = epoch.NewEpoch(1, 100) // Future write
+	vs.SetExclusiveWriter(-1)     // Force shared state for full FastTrack check
 	ctx.C.Set(1, 50)              // Earlier time
 	ctx.Epoch = epoch.NewEpoch(1, 50)
 
@@ -363,6 +364,7 @@ func TestReset(t *testing.T) {
 	// Trigger a race to increment counter.
 	vs := d.shadowMemory.GetOrCreate(addr)
 	vs.W = epoch.NewEpoch(1, 100)
+	vs.SetExclusiveWriter(-1) // Force shared state for full FastTrack check
 	ctx.C.Set(1, 50)
 	ctx.Epoch = epoch.NewEpoch(1, 50)
 

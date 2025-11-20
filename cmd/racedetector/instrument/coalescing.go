@@ -33,9 +33,9 @@
 //  5. Same operation type (read OR write, not mixed)
 //
 // Performance Impact (from PLDI 2017):
-//  - 60% reduction in race check overhead (proven result)
-//  - Minimal false negative rate (<1%)
-//  - Works best on structured code (80% of operations coalesceable)
+//   - 60% reduction in race check overhead (proven result)
+//   - Minimal false negative rate (<1%)
+//   - Works best on structured code (80% of operations coalesceable)
 //
 // Integration with CAS Shadow Memory (Task 1):
 // Task 1 made individual barriers 81% faster (2.07ns vs 11.12ns).
@@ -62,11 +62,11 @@ import (
 //	BarrierPos: after "x=3" statement
 //
 // Safety Invariants:
-//  - All operations access the SAME address
-//  - All operations have the SAME type (read or write)
-//  - All operations are CONSECUTIVE (no intervening statements)
-//  - No control flow between operations
-//  - No function calls between operations
+//   - All operations access the SAME address
+//   - All operations have the SAME type (read or write)
+//   - All operations are CONSECUTIVE (no intervening statements)
+//   - No control flow between operations
+//   - No function calls between operations
 type CoalescingGroup struct {
 	// Addr is the address expression common to all operations.
 	// Example: &x, &arr[0], &obj.field
@@ -355,9 +355,9 @@ func (ca *CoalescingAnalyzer) finalizeCurrentGroup() {
 // calculateStats calculates coalescing statistics.
 //
 // Formula:
-//  - CoalescedOperations = sum(len(group.Operations) for each group)
-//  - BarriersRemoved = CoalescedOperations - GroupsCreated
-//  - Example: Group of 3 operations → removed 2 barriers (kept 1)
+//   - CoalescedOperations = sum(len(group.Operations) for each group)
+//   - BarriersRemoved = CoalescedOperations - GroupsCreated
+//   - Example: Group of 3 operations → removed 2 barriers (kept 1)
 //
 // Thread Safety: NOT thread-safe (modifies stats).
 func (ca *CoalescingAnalyzer) calculateStats() {
@@ -404,9 +404,9 @@ func (ca *CoalescingAnalyzer) GetCoalescingReduction() float64 {
 //	&obj.x == &obj.x  → true (same selector)
 //
 // Limitations:
-//  - Does NOT handle semantic equality (e.g., i+1 vs j when i==j)
-//  - Does NOT use type information (go/types)
-//  - Conservative: returns false when unsure
+//   - Does NOT handle semantic equality (e.g., i+1 vs j when i==j)
+//   - Does NOT use type information (go/types)
+//   - Conservative: returns false when unsure
 //
 // Future Enhancement (Phase 6B):
 // Use go/types package for semantic equality.
@@ -490,16 +490,16 @@ func astNodesEqual(a, b ast.Expr) bool {
 // hasControlFlowBetween checks if there's control flow between two statements.
 //
 // Control Flow Statements (break coalescing):
-//  - if/else/switch: Conditional execution
-//  - for/range: Loops
-//  - goto: Unconditional jump
-//  - return: Early exit
-//  - defer: Deferred execution
+//   - if/else/switch: Conditional execution
+//   - for/range: Loops
+//   - goto: Unconditional jump
+//   - return: Early exit
+//   - defer: Deferred execution
 //
 // Safe Statements (allow coalescing):
-//  - Assignments: x = 42
-//  - Expressions: fmt.Println() (but breaks on function call rule)
-//  - Declarations: var x int
+//   - Assignments: x = 42
+//   - Expressions: fmt.Println() (but breaks on function call rule)
+//   - Declarations: var x int
 //
 // For MVP, we use a conservative approach:
 // If statements are NOT in the same basic block, return true.
@@ -533,9 +533,9 @@ func hasControlFlowBetween(stmt1, stmt2 ast.Node, file *ast.File) bool {
 // hasFunctionCallBetween checks if there's a function call between two statements.
 //
 // Function calls may have side effects:
-//  - Modify global state
-//  - Trigger synchronization
-//  - Change variable values
+//   - Modify global state
+//   - Trigger synchronization
+//   - Change variable values
 //
 // Therefore, we CANNOT coalesce operations separated by function calls.
 //
@@ -605,8 +605,8 @@ func findParentBlock(node ast.Node, file *ast.File) *ast.BlockStmt {
 // areStatementsConsecutive checks if two statements are consecutive in a block.
 //
 // Consecutive means:
-//  - stmt2 immediately follows stmt1
-//  - No intervening statements
+//   - stmt2 immediately follows stmt1
+//   - No intervening statements
 //
 // Example:
 //
