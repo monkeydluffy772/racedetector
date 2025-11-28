@@ -22,7 +22,7 @@
 
 // NOTE: Assembly implementation disabled for v0.1.0 to ensure stability.
 // The fallback implementation in goid_generic.go will be used instead.
-// Assembly optimization will be re-enabled in v0.2.0.
+// Assembly optimization will be re-enabled in v0.4.0.
 
 package api
 

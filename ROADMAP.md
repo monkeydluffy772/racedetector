@@ -3,7 +3,7 @@
 > **Strategic Advantage**: Proven FastTrack algorithm implementation without CGO dependency!
 > **Approach**: Scientific algorithm + Go best practices - eliminates C++ ThreadSanitizer dependency
 
-**Last Updated**: 2025-11-20 | **Current Version**: v0.2.0 (RELEASED!) | **Strategy**: MVP → Optimization + Hardening → Runtime Integration → Go Proposal | **Milestone**: v0.2.0 COMPLETE! → v0.4.0 (Runtime Integration) → v1.0.0 (Q1 2026)
+**Last Updated**: 2025-11-28 | **Current Version**: v0.3.0 (RELEASED!) | **Strategy**: MVP → Optimization + Hardening → Advanced Optimizations → Runtime Integration → Go Proposal | **Milestone**: v0.3.0 COMPLETE! → v0.4.0 (Runtime Integration) → v1.0.0 (Q1 2026)
 
 ---
 
@@ -44,6 +44,8 @@ v0.1.0 (FIRST WORKING RELEASE) ✅ RELEASED 2025-11-19
          ↓ (detector works, catches real races!)
 v0.2.0 (Performance + Hardening) ✅ RELEASED 2025-11-20
          ↓ (99% overhead reduction, 74× speedup, production-grade!)
+v0.3.0 (Advanced Optimizations) ✅ RELEASED 2025-11-28
+         ↓ (43× faster VectorClocks, 8× memory reduction, sampling!)
 v0.4.0 (Go Runtime Integration) → Replace ThreadSanitizer in Go toolchain
          ↓ (1-2 months testing)
 v1.0.0 LTS → Production-ready with Go community adoption (Q1 2026)
@@ -70,7 +72,21 @@ v1.0.0 LTS → Production-ready with Go community adoption (Q1 2026)
   - Overflow detection with 90% warnings
   - Stack depot for complete race reports (both stacks!)
 
-**v0.4.0** = Go runtime integration (planned, formerly v0.3.0)
+**v0.3.0** = Advanced Performance Optimizations ✅ RELEASED
+- **Sparse-aware VectorClocks**:
+  - Track maxTID to skip empty slots
+  - 43× faster Join (500ns → 11.48ns)
+  - 20× faster LessOrEqual (300ns → 14.80ns)
+- **Address Compression**:
+  - 8-byte alignment for sequential accesses
+  - Up to 8× memory reduction
+- **Sampling-based Detection**:
+  - RACEDETECTOR_SAMPLE_RATE environment variable
+  - Configurable overhead for CI/CD workflows
+- **Enhanced Read-Shared**:
+  - 4 inline slots for delayed VectorClock promotion
+
+**v0.4.0** = Go runtime integration (planned)
 - Replace `runtime/race/*.syso` (ThreadSanitizer binaries)
 - Integrate with Go compiler's `-race` flag
 - Official Go toolchain compatibility testing
@@ -89,10 +105,10 @@ v1.0.0 LTS → Production-ready with Go community adoption (Q1 2026)
 
 ---
 
-## 📊 Current Status (v0.2.0)
+## 📊 Current Status (v0.3.0)
 
-**Phase**: ✅ Production-Ready Standalone Tool
-**Detector**: Production-grade! 99% overhead reduction! 🚀
+**Phase**: ✅ Production-Ready Standalone Tool with Advanced Optimizations
+**Detector**: Production-grade! 43× faster VectorClocks! 8× memory reduction! 🚀
 **AST Instrumentation**: Complete! Optimized with BigFoot coalescing! ✨
 
 **What Works**:
@@ -334,5 +350,5 @@ Previous Write at 0xc00000a0b8 by goroutine 3:
 
 ---
 
-*Version 1.1 (Updated 2025-11-20)*
-*Current: v0.2.0 (RELEASED) | Phase: Production-Ready Standalone Tool | Next: v0.4.0 (Go Runtime Integration) | Target: v1.0.0 LTS (Q1 2026)*
+*Version 1.2 (Updated 2025-11-28)*
+*Current: v0.3.0 (RELEASED) | Phase: Production-Ready Standalone Tool | Next: v0.4.0 (Go Runtime Integration) | Target: v1.0.0 LTS (Q1 2026)*

@@ -19,7 +19,7 @@
 
 // NOTE: v0.1.0 - Using this fallback on ALL platforms (assembly disabled for stability).
 // The assembly optimization (goid_amd64.go) is disabled via build tag and will be
-// re-enabled in v0.2.0 after thorough testing.
+// re-enabled in v0.4.0 after thorough testing.
 
 package api
 

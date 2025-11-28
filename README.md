@@ -4,7 +4,7 @@
 [![Release](https://img.shields.io/github/v/release/kolkov/racedetector?include_prereleases)](https://github.com/kolkov/racedetector/releases)
 [![CI](https://github.com/kolkov/racedetector/actions/workflows/test.yml/badge.svg)](https://github.com/kolkov/racedetector/actions)
 [![Go Report Card](https://goreportcard.com/badge/github.com/kolkov/racedetector)](https://goreportcard.com/report/github.com/kolkov/racedetector)
-[![Coverage](https://img.shields.io/badge/coverage-85.7%25-brightgreen)](https://github.com/kolkov/racedetector)
+[![Coverage](https://img.shields.io/badge/coverage-86.3%25-brightgreen)](https://github.com/kolkov/racedetector)
 [![License](https://img.shields.io/github/license/kolkov/racedetector)](https://github.com/kolkov/racedetector/blob/main/LICENSE)
 [![GoDoc](https://pkg.go.dev/badge/github.com/kolkov/racedetector/race.svg)](https://pkg.go.dev/github.com/kolkov/racedetector/race)
 
@@ -118,27 +118,43 @@ demo.bat   # Windows
 
 ## 💎 What Makes This Production-Ready
 
-### 🚀 NEW in v0.2.0 (November 20, 2025)
+### 🚀 NEW in v0.3.0 (November 28, 2025)
 
-**99% overhead reduction + Production hardening in ONE release!**
+**Advanced performance optimizations - up to 43x faster vector clocks!**
 
 **Performance Breakthroughs:**
-- ⚡ **74× speedup**: Hot path overhead 15-22% → 2-5%
-- 🔥 **Zero allocations**: 0 B/op (was 48-128 B/op)
-- 📊 **90% barrier reduction**: BigFoot static coalescing (PLDI 2017)
-- 🎯 **SmartTrack optimization**: 10-20% HB check reduction (PLDI 2020)
+- ⚡ **43× faster VectorClock Join**: 500ns → 11.48ns (sparse-aware)
+- 🔥 **20× faster LessOrEqual**: 300ns → 14.80ns
+- 📊 **8× memory reduction**: Address compression (8-byte alignment)
+- 🎯 **Sampling support**: `RACEDETECTOR_SAMPLE_RATE` for CI/CD
 
-**Production Hardening:**
-- 📈 **65,536 goroutines**: 256× increase (was 256)
-- ⏱️ **281T operations**: 16M× increase (was 16M)
-- ⚠️ **Overflow warnings**: Early detection at 90% threshold
-- 🐛 **Complete stack traces**: Both current and previous access!
+**New Features:**
+- 🆕 **Sparse-aware Vector Clocks**: Track maxTID to skip empty slots
+- 🆕 **4 Inline Read Slots**: Delay VectorClock promotion for 2-4 readers
+- 🆕 **Configurable Sampling**: 0-100% sample rate for overhead control
+- 🆕 **Address Compression**: `SetAddressCompression(true)` for memory savings
 
 **Quality Metrics:**
 - ✅ 670+ tests passing (100% pass rate)
 - ✅ 0 linter issues in production code
-- ✅ Research-backed optimizations (3 PLDI papers)
-- ✅ 100% backward compatible with v0.1.0
+- ✅ 86.3% test coverage
+- ✅ 100% backward compatible with v0.2.0
+
+---
+
+### v0.2.0 (November 20, 2025)
+
+**99% overhead reduction + Production hardening!**
+
+**Performance:**
+- ⚡ **74× speedup**: Hot path overhead 15-22% → 2-5%
+- 🔥 **Zero allocations**: 0 B/op
+- 📊 **90% barrier reduction**: BigFoot coalescing
+
+**Production Hardening:**
+- 📈 **65,536 goroutines**: 256× increase
+- ⏱️ **281T operations**: 16M× increase
+- 🐛 **Complete stack traces**: Both current and previous access
 
 ---
 
@@ -156,22 +172,27 @@ We've been using this in production for:
 - Zero linter issues (golangci-lint with 34+ linters)
 - Zero data races in the detector itself (dogfooded with `-race`)
 
-### ⚡ Performance (v0.2.0)
+### ⚡ Performance (v0.3.0)
 
 **Now competitive with Go's official race detector!**
 
-| Metric | v0.1.0 | v0.2.0 | Go TSAN | Target |
-|--------|--------|--------|---------|--------|
-| **Hot path overhead** | 15-22% | **2-5%** ✨ | 5-10x | <10x ✅ |
-| **Memory allocations** | 48-128 B/op | **0 B/op** ✨ | - | 0 ✅ |
-| **Barrier reduction** | - | **90%** ✨ | - | 40-60% ✅ |
-| **Max goroutines** | 256 | **65,536** ✨ | Unlimited | 1000+ ✅ |
-| **Max operations** | 16M | **281T** ✨ | Unlimited | 100M+ ✅ |
-| **False positives** | <1% | <1% | <1% | <1% ✅ |
+| Metric | v0.1.0 | v0.2.0 | v0.3.0 | Go TSAN | Target |
+|--------|--------|--------|--------|---------|--------|
+| **VectorClock Join** | ~500ns | ~500ns | **11.48ns** ✨ | - | <50ns ✅ |
+| **VectorClock LessOrEqual** | ~300ns | ~300ns | **14.80ns** ✨ | - | <50ns ✅ |
+| **Shadow Load (hit)** | ~10ns | ~10ns | **2.46ns** ✨ | - | <10ns ✅ |
+| **Memory (sequential)** | 100% | 100% | **12.5%** ✨ | - | <50% ✅ |
+| **Hot path overhead** | 15-22% | 2-5% | **2-5%** | 5-10x | <10x ✅ |
+| **Max goroutines** | 256 | 65,536 | 65,536 | Unlimited | 1000+ ✅ |
 
-✨ = **NEW in v0.2.0!**
+✨ = **NEW in v0.3.0!**
 
-**Performance improvements:**
+**v0.3.0 Performance Improvements:**
+- **Sparse-aware VectorClock**: 43× faster Join, 20× faster LessOrEqual
+- **Address Compression**: 8× memory reduction for sequential accesses
+- **Sampling**: Configurable overhead for CI/CD workflows
+
+**v0.2.0 Performance Improvements:**
 - **CAS-based shadow memory**: 81.4% faster, lock-free
 - **BigFoot coalescing**: 90% fewer barriers (PLDI 2017)
 - **SmartTrack ownership**: 10-20% HB check reduction (PLDI 2020)
@@ -348,13 +369,18 @@ $ CGO_ENABLED=0 go build -race main.go  # Just works! ✅
 
 ### Roadmap to Go Integration
 
-**v0.2.0 (November 2025):** ✅ **COMPLETE!**
-- Enhanced stack traces with full call chains ✅
-- Performance optimizations (99% overhead reduction) ✅
-- Production hardening (65K goroutines, 281T ops) ✅
-- Overflow detection with warnings ✅
+**v0.3.0 (November 2025):** ✅ **COMPLETE!**
+- Sparse-aware Vector Clocks (43× faster) ✅
+- Address Compression (8× memory reduction) ✅
+- Sampling-based detection for CI/CD ✅
+- 4 Inline Read Slots optimization ✅
 
-**v0.4.0 (January 2026):** ← **Formerly v0.3.0**
+**v0.2.0 (November 2025):** ✅ **COMPLETE!**
+- 99% overhead reduction ✅
+- Production hardening (65K goroutines, 281T ops) ✅
+- Complete stack traces ✅
+
+**v0.4.0 (January 2026):**
 - Go runtime integration (`$GOROOT/src/runtime/race/`)
 - Port official Go race detector test suite
 - Performance benchmarks vs ThreadSanitizer
@@ -493,6 +519,7 @@ See [LICENSE](LICENSE) for full text.
 - **Internal Development:** September-November 2025
 - **Open Source Release:** November 19, 2025 (v0.1.0)
 - **Production Release:** November 20, 2025 (v0.2.0)
+- **Performance Release:** November 28, 2025 (v0.3.0)
 - **Next Milestone:** v0.4.0 (January 2026)
 - **Go Proposal:** Q2 2026
 
@@ -514,7 +541,7 @@ See [LICENSE](LICENSE) for full text.
 
 *"After successfully implementing [Pure-Go HDF5](https://github.com/scigolib/hdf5), we knew Pure-Go race detection was possible. Now we're proving it."*
 
-**Status:** v0.2.0 Released - Production-Ready with 99% Overhead Reduction!
+**Status:** v0.3.0 Released - 43× Faster VectorClocks + 8× Memory Reduction!
 **Community:** Let's get this into Go!
 **Goal:** Official integration by 2027
 

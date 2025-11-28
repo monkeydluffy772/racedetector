@@ -243,10 +243,8 @@ func (sv *SyncVar) SetReleaseClock(clock *vectorclock.VectorClock) {
 		sv.releaseClock = clock.Clone()
 	} else {
 		// Subsequent Release: Update in place to avoid allocations.
-		// Copy all elements from clock to releaseClock.
-		for i := 0; i < vectorclock.MaxThreads; i++ {
-			sv.releaseClock[i] = clock[i]
-		}
+		// v0.3.0: Use CopyFrom for sparse-aware copying.
+		sv.releaseClock.CopyFrom(clock)
 	}
 }
 
@@ -355,9 +353,8 @@ func (sv *SyncVar) SetChannelSendClock(clock *vectorclock.VectorClock) {
 		chState.sendClock = clock.Clone()
 	} else {
 		// Subsequent send: Update in place.
-		for i := 0; i < vectorclock.MaxThreads; i++ {
-			chState.sendClock[i] = clock[i]
-		}
+		// v0.3.0: Use CopyFrom for sparse-aware copying.
+		chState.sendClock.CopyFrom(clock)
 	}
 }
 
@@ -395,9 +392,8 @@ func (sv *SyncVar) SetChannelRecvClock(clock *vectorclock.VectorClock) {
 		chState.recvClock = clock.Clone()
 	} else {
 		// Subsequent recv: Update in place.
-		for i := 0; i < vectorclock.MaxThreads; i++ {
-			chState.recvClock[i] = clock[i]
-		}
+		// v0.3.0: Use CopyFrom for sparse-aware copying.
+		chState.recvClock.CopyFrom(clock)
 	}
 }
 

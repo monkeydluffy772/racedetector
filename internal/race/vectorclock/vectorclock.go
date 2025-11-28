@@ -39,7 +39,15 @@ const (
 // Example: {0: 50, 1: 30, 2: 60, ...} means Thread0@50, Thread1@30, Thread2@60.
 //
 // Size: 65,536 × 4 bytes = 256KB (large, but only allocated for read-shared variables).
-type VectorClock [MaxThreads]uint32
+//
+// v0.3.0 SPARSE-AWARE OPTIMIZATION (P1):
+// Track maxTID to avoid iterating over 65536 elements when most are zero.
+// Typical programs have ~10-100 active goroutines, so this reduces iteration
+// from 65536 to ~100 elements (655x speedup for Join/LessOrEqual).
+type VectorClock struct {
+	clocks [MaxThreads]uint32 // Clock values per thread.
+	maxTID uint16             // Highest TID with non-zero clock (sparse optimization).
+}
 
 // New creates a zero-initialized vector clock.
 //
@@ -54,10 +62,16 @@ func New() *VectorClock {
 // This is used when we need to preserve a snapshot of logical time,
 // for example when storing a vector clock in shadow memory.
 //
+// v0.3.0: Only copies up to maxTID for efficiency.
+//
 // Returns a pointer to the new copy to avoid copying on return.
 func (vc *VectorClock) Clone() *VectorClock {
-	clone := &VectorClock{}
-	*clone = *vc // Copy the array
+	clone := &VectorClock{maxTID: vc.maxTID}
+	// Only copy up to maxTID+1 elements for efficiency.
+	// Use uint32 loop counter to avoid uint16 overflow at maxTID=65535.
+	for i := uint32(0); i <= uint32(vc.maxTID); i++ {
+		clone.clocks[i] = vc.clocks[i]
+	}
 	return clone
 }
 
@@ -68,15 +82,30 @@ func (vc *VectorClock) Clone() *VectorClock {
 //
 // Algorithm: For each thread i, vc[i] = max(vc[i], other[i])
 //
-// Performance: Critical operation, must be fast. Uses simple loop for compiler
-// auto-vectorization. Target: < 500ns, 0 allocs.
+// v0.3.0 SPARSE-AWARE: Only iterates up to max(vc.maxTID, other.maxTID).
+// For typical programs (~100 goroutines), this is 655x faster than iterating 65536 elements.
+//
+// Performance: Critical operation, must be fast. Target: < 10ns for sparse clocks.
 //
 //go:nosplit
 func (vc *VectorClock) Join(other *VectorClock) {
-	for i := 0; i < MaxThreads; i++ {
-		if other[i] > vc[i] {
-			vc[i] = other[i]
+	// Determine the range to iterate (sparse optimization).
+	limit := uint32(vc.maxTID)
+	if uint32(other.maxTID) > limit {
+		limit = uint32(other.maxTID)
+	}
+
+	// Point-wise maximum only up to limit.
+	// Use uint32 loop counter to avoid uint16 overflow at maxTID=65535.
+	for i := uint32(0); i <= limit; i++ {
+		if other.clocks[i] > vc.clocks[i] {
+			vc.clocks[i] = other.clocks[i]
 		}
+	}
+
+	// Update maxTID if other had higher TIDs.
+	if other.maxTID > vc.maxTID {
+		vc.maxTID = other.maxTID
 	}
 }
 
@@ -88,12 +117,17 @@ func (vc *VectorClock) Join(other *VectorClock) {
 // Used in FastTrack to check if a write epoch happens-before a read:
 // If write's VC ⊑ read's VC, then no race (write happened-before read).
 //
-// Performance: Critical operation on race check path. Target: < 300ns, 0 allocs.
+// v0.3.0 SPARSE-AWARE: Only checks up to vc.maxTID (elements beyond are zero).
+// For typical programs (~100 goroutines), this is 655x faster.
+//
+// Performance: Critical operation on race check path. Target: < 5ns for sparse clocks.
 //
 //go:nosplit
 func (vc *VectorClock) LessOrEqual(other *VectorClock) bool {
-	for i := 0; i < MaxThreads; i++ {
-		if vc[i] > other[i] {
+	// Only need to check up to vc.maxTID (elements beyond are 0, which is always <= other[i]).
+	// Use uint32 loop counter to avoid uint16 overflow at maxTID=65535.
+	for i := uint32(0); i <= uint32(vc.maxTID); i++ {
+		if vc.clocks[i] > other.clocks[i] {
 			return false
 		}
 	}
@@ -118,23 +152,58 @@ func (vc *VectorClock) HappensBefore(other *VectorClock) bool {
 //
 // This is called on every memory access by thread tid.
 // Increments vc[tid] to represent forward progress in logical time.
+//
+// v0.3.0: Updates maxTID if needed.
 func (vc *VectorClock) Increment(tid uint16) {
-	vc[tid]++
+	vc.clocks[tid]++
+	if tid > vc.maxTID {
+		vc.maxTID = tid
+	}
 }
 
 // Get returns the clock value for thread tid.
 //
 // Used to read a specific thread's logical time from the vector clock.
 func (vc *VectorClock) Get(tid uint16) uint32 {
-	return vc[tid]
+	return vc.clocks[tid]
 }
 
 // Set sets the clock value for thread tid.
 //
 // Used to update a specific thread's logical time in the vector clock.
 // Typically used during initialization or synchronization operations.
+//
+// v0.3.0: Updates maxTID if clock > 0 and tid > maxTID.
 func (vc *VectorClock) Set(tid uint16, clock uint32) {
-	vc[tid] = clock
+	vc.clocks[tid] = clock
+	if clock > 0 && tid > vc.maxTID {
+		vc.maxTID = tid
+	}
+}
+
+// GetMaxTID returns the highest TID with non-zero clock (v0.3.0 sparse optimization).
+//
+// This is useful for debugging and understanding the sparsity of the vector clock.
+func (vc *VectorClock) GetMaxTID() uint16 {
+	return vc.maxTID
+}
+
+// CopyFrom copies all values from another VectorClock into this one.
+//
+// v0.3.0: Uses sparse-aware copying for efficiency.
+// This is used for in-place updates to avoid allocations.
+func (vc *VectorClock) CopyFrom(other *VectorClock) {
+	// Use uint32 loop counter to avoid uint16 overflow at maxTID=65535.
+	for i := uint32(0); i <= uint32(other.maxTID); i++ {
+		vc.clocks[i] = other.clocks[i]
+	}
+	// Clear elements beyond other.maxTID if vc had higher maxTID.
+	if vc.maxTID > other.maxTID {
+		for i := uint32(other.maxTID) + 1; i <= uint32(vc.maxTID); i++ {
+			vc.clocks[i] = 0
+		}
+	}
+	vc.maxTID = other.maxTID
 }
 
 // String returns a debug representation of the vector clock.
@@ -142,13 +211,16 @@ func (vc *VectorClock) Set(tid uint16, clock uint32) {
 // Format: "{tid1:clock1, tid2:clock2, ...}" showing only non-zero clocks.
 // This is used for debugging and race reporting, not on hot path.
 //
+// v0.3.0: Only iterates up to maxTID for efficiency.
+//
 // Example: "{0:50, 1:30, 5:42}" means Thread0=50, Thread1=30, Thread5=42.
 func (vc *VectorClock) String() string {
 	var parts []string
-	for i := 0; i < MaxThreads; i++ {
-		if vc[i] != 0 {
-			//nolint:gosec // G115: i is in range [0, 255], safe to convert to uint32.
-			parts = append(parts, itoa(uint32(i))+":"+itoa(vc[i]))
+	// v0.3.0: Only iterate up to maxTID (sparse optimization).
+	// Use uint32 loop counter to avoid uint16 overflow at maxTID=65535.
+	for i := uint32(0); i <= uint32(vc.maxTID); i++ {
+		if vc.clocks[i] != 0 {
+			parts = append(parts, itoa(i)+":"+itoa(vc.clocks[i]))
 		}
 	}
 	if len(parts) == 0 {

@@ -12,16 +12,19 @@ import (
 // v0.2.0 Task 3 (SmartTrack): 40 bytes (adds exclusiveWriter int64 + writeCount uint32 + padding).
 // v0.2.0 Task 4 (64-bit Epoch): 48 bytes (W changed from uint32 to uint64, adds 8 bytes).
 // v0.2.0 Task 6 (Stack Depot): 64 bytes (adds writeStackHash uint64 + readStackHash uint64).
-// Trade-off: 64 bytes per VarState for complete race reports with both stacks.
+// v0.3.0 P1 (Enhanced Read-Shared): 96 bytes (readEpoch → readEpochs[4] + readerCount uint8).
+// Trade-off: 96 bytes per VarState BUT avoids 1KB VectorClock allocation for 2-4 readers.
 func TestVarStateSize(t *testing.T) {
-	const expectedSize = 64 // W(8) + mu(8) + readEpoch(8) + readClock(8) + exclusiveWriter(8) + writeCount(4) + padding(4) + writeStackHash(8) + readStackHash(8)
+	// v0.3.0: W(8) + mu(8) + readEpochs[4](32) + readerCount(1) + padding(7) + readClock(8)
+	//       + exclusiveWriter(8) + writeCount(4) + padding(4) + writeStackHash(8) + readStackHash(8) = 96
+	const expectedSize = 96
 	actualSize := unsafe.Sizeof(VarState{})
 
 	if actualSize != expectedSize {
-		t.Errorf("VarState size = %d bytes, want %d bytes (W + mu + readEpoch + pointer + ownership + stack hashes)", actualSize, expectedSize)
+		t.Errorf("VarState size = %d bytes, want %d bytes (v0.3.0 with inline reader slots)", actualSize, expectedSize)
 	}
 
-	t.Logf("VarState size: %d bytes (64-bit Epoch + adaptive representation + race-safe + SmartTrack ownership + Stack Depot)", actualSize)
+	t.Logf("VarState size: %d bytes (v0.3.0 Enhanced Read-Shared with 4 inline reader slots)", actualSize)
 }
 
 // TestVarStateNewZero verifies that NewVarState creates a zero-initialized state.
@@ -189,6 +192,7 @@ func TestVarStateReadWrite(t *testing.T) {
 
 // TestVarStateString verifies the String() method's debug output format.
 func TestVarStateString(t *testing.T) {
+	// v0.3.0 Enhanced Read-Shared: String format changed to "W:x@y R:[epochs...]"
 	tests := []struct {
 		name string
 		vs   func() *VarState
@@ -199,7 +203,7 @@ func TestVarStateString(t *testing.T) {
 			vs: func() *VarState {
 				return &VarState{}
 			},
-			want: "W:0@0 R:0@0",
+			want: "W:0@0 R:[]", // v0.3.0: Empty reader list
 		},
 		{
 			name: "write epoch set",
@@ -208,7 +212,7 @@ func TestVarStateString(t *testing.T) {
 				vs.W = epoch.NewEpoch(5, 100)
 				return vs
 			},
-			want: "W:100@5 R:0@0",
+			want: "W:100@5 R:[]", // v0.3.0: Empty reader list
 		},
 		{
 			name: "read epoch set",
@@ -217,7 +221,7 @@ func TestVarStateString(t *testing.T) {
 				vs.SetReadEpoch(epoch.NewEpoch(3, 50))
 				return vs
 			},
-			want: "W:0@0 R:50@3",
+			want: "W:0@0 R:[50@3]", // v0.3.0: Single reader in brackets
 		},
 		{
 			name: "both epochs set",
@@ -227,7 +231,7 @@ func TestVarStateString(t *testing.T) {
 				vs.SetReadEpoch(epoch.NewEpoch(3, 50))
 				return vs
 			},
-			want: "W:100@5 R:50@3",
+			want: "W:100@5 R:[50@3]", // v0.3.0: Single reader in brackets
 		},
 		{
 			name: "same thread",
@@ -237,7 +241,7 @@ func TestVarStateString(t *testing.T) {
 				vs.SetReadEpoch(epoch.NewEpoch(7, 199))
 				return vs
 			},
-			want: "W:200@7 R:199@7",
+			want: "W:200@7 R:[199@7]", // v0.3.0: Single reader in brackets
 		},
 	}
 
@@ -269,9 +273,10 @@ func TestVarStateZeroValue(t *testing.T) {
 	}
 
 	// String should work on zero value.
+	// v0.3.0: Format changed to "W:x@y R:[epochs...]"
 	str := vs.String()
-	if str != "W:0@0 R:0@0" {
-		t.Errorf("Zero VarState.String() = %q, want %q", str, "W:0@0 R:0@0")
+	if str != "W:0@0 R:[]" {
+		t.Errorf("Zero VarState.String() = %q, want %q", str, "W:0@0 R:[]")
 	}
 
 	t.Logf("Zero VarState works correctly: %s", vs.String())

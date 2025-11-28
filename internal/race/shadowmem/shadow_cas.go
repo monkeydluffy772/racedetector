@@ -38,6 +38,12 @@ type CASCell struct {
 //   - Linear probing (max 8 probes) for collision handling
 //   - Typical collision rate: <0.1% for workloads with <10K variables
 //
+// v0.3.0 Address Compression (P1):
+//   - Addresses are compressed to 8-byte alignment
+//   - Reduces memory usage by up to 8x for sequential accesses
+//   - Conservative: treats all bytes in 8-byte block as same (correct but may over-detect)
+//   - Configurable via SetAddressCompression()
+//
 // Performance characteristics:
 //   - Load (hit): ~10ns, 0 allocs
 //   - Store (new): ~20ns, 2 allocs (CASCell + VarState)
@@ -54,6 +60,12 @@ type CASBasedShadow struct {
 	// Array size: 65536 (2^16) slots
 	// Memory: 65536 × 8 bytes = 524,288 bytes (512KB)
 	cells [65536]atomic.Pointer[CASCell]
+
+	// v0.3.0: Address compression flag.
+	// When true, addresses are aligned to 8-byte boundaries before hashing.
+	// This reduces memory usage but may cause false sharing detection.
+	// Default: true (enabled for memory efficiency).
+	compressAddresses bool
 }
 
 // NewCASBasedShadow creates a new CAS-based shadow memory.
@@ -61,10 +73,13 @@ type CASBasedShadow struct {
 // The returned shadow memory is ready to use with zero initialization.
 // All array slots are initially nil (no cells allocated).
 //
+// v0.3.0: Address compression is enabled by default.
+// Use SetAddressCompression(false) to disable.
+//
 // Memory allocation:
 //   - Initial: 512KB for array (allocated on heap)
-//   - Per-address: 24 bytes (CASCell) + 24 bytes (VarState with mutex) = 48 bytes
-//   - For 10K variables: 512KB + 10K × 48 bytes ≈ 992KB total
+//   - Per-address: 24 bytes (CASCell) + 96 bytes (VarState v0.3.0) = 120 bytes
+//   - For 10K variables: 512KB + 10K × 120 bytes ≈ 1.7MB total
 //
 // Example:
 //
@@ -72,7 +87,51 @@ type CASBasedShadow struct {
 //	vs := shadow.LoadOrStore(0x1234, nil) // Get or create shadow cell.
 //	vs.W = epoch.NewEpoch(1, 10)          // Record write access.
 func NewCASBasedShadow() *CASBasedShadow {
-	return &CASBasedShadow{}
+	return &CASBasedShadow{
+		compressAddresses: true, // v0.3.0: Enable address compression by default.
+	}
+}
+
+// SetAddressCompression enables or disables 8-byte address alignment.
+//
+// v0.3.0: When enabled (default), addresses are aligned to 8-byte boundaries
+// before hashing. This provides:
+//   - Up to 8x reduction in memory usage for sequential accesses
+//   - Better hash distribution (fewer collisions)
+//   - Potential for false sharing detection (conservative)
+//
+// When disabled, exact address tracking is used (original behavior).
+//
+// This should be called before any Load/Store operations.
+// Changing this during operation may cause inconsistent behavior.
+//
+// Example:
+//
+//	shadow := NewCASBasedShadow()
+//	shadow.SetAddressCompression(false) // Disable for exact tracking.
+func (s *CASBasedShadow) SetAddressCompression(enabled bool) {
+	s.compressAddresses = enabled
+}
+
+// GetAddressCompression returns whether address compression is enabled.
+func (s *CASBasedShadow) GetAddressCompression() bool {
+	return s.compressAddresses
+}
+
+// alignAddr returns the address aligned to 8-byte boundary.
+//
+// v0.3.0: This is the address compression function.
+// Formula: addr & ^uintptr(7) clears the lowest 3 bits.
+//
+// Examples:
+//   - 0x1000 → 0x1000 (already aligned)
+//   - 0x1001 → 0x1000 (align down)
+//   - 0x1007 → 0x1000 (align down)
+//   - 0x1008 → 0x1008 (already aligned)
+//
+//go:nosplit
+func alignAddr(addr uintptr) uintptr {
+	return addr &^ uintptr(7) // Clear bottom 3 bits.
 }
 
 // fastHash computes a fast hash of an address, masked to 16-bit range.
@@ -137,6 +196,11 @@ func fastHash(addr uintptr) uint64 {
 //
 //go:nosplit
 func (s *CASBasedShadow) Load(addr uintptr) *VarState {
+	// v0.3.0: Apply address compression if enabled.
+	if s.compressAddresses {
+		addr = alignAddr(addr)
+	}
+
 	hash := fastHash(addr)
 
 	// Linear probing: try up to 8 slots.
@@ -194,6 +258,11 @@ func (s *CASBasedShadow) Load(addr uintptr) *VarState {
 //
 // Note: This is NOT marked //go:nosplit because it allocates (CASCell creation).
 func (s *CASBasedShadow) Store(addr uintptr, vs *VarState) *VarState {
+	// v0.3.0: Apply address compression if enabled.
+	if s.compressAddresses {
+		addr = alignAddr(addr)
+	}
+
 	// Allocate new cell (happens outside the CAS loop for efficiency).
 	newCell := &CASCell{
 		addr:     addr,

@@ -117,14 +117,14 @@ FOR MORE INFORMATION:
 // testCommand implements the 'racedetector test' command.
 //
 // This will instrument and run tests with race detection enabled.
-// Currently not implemented - planned for v0.2.0.
+// Currently not implemented - planned for v0.4.0.
 //
 // Example:
 //
 //	racedetector test -v ./internal/...
 func testCommand(_ []string) {
-	// TODO: Implement test command in v0.2.0 (args unused until implemented)
+	// TODO: Implement test command in v0.4.0 (args unused until implemented)
 	fmt.Fprintln(os.Stderr, "Error: 'test' command not yet implemented")
-	fmt.Fprintln(os.Stderr, "This will be implemented in v0.2.0")
+	fmt.Fprintln(os.Stderr, "This will be implemented in v0.4.0")
 	os.Exit(1)
 }

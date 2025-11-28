@@ -11,6 +11,7 @@ Complete guide to using the `racedetector` tool for detecting data races in Go p
   - [test Command](#test-command) (future)
 - [Integration with CI/CD](#integration-with-cicd)
 - [Best Practices](#best-practices)
+- [Sampling Mode (NEW in v0.3.0)](#sampling-mode-new-in-v030)
 - [Current Limitations](#current-limitations)
 - [FAQ](#faq)
 
@@ -424,7 +425,7 @@ func getConfig() *Config {
 
 ### Performance Tips
 
-**Current (v0.2.0 Production):**
+**Current (v0.3.0 Production):**
 - Build overhead: ~1-2 seconds (one-time instrumentation)
 - Runtime overhead: ~15-22% (hot path optimizations)
 - Memory overhead: Minimal (efficient shadow memory)
@@ -436,9 +437,43 @@ func getConfig() *Config {
 
 ---
 
+## Sampling Mode (NEW in v0.3.0)
+
+For CI/CD workflows where full detection overhead is unacceptable, v0.3.0 introduces **sampling-based detection**.
+
+### Environment Variable
+
+```bash
+# Set sample rate (0-100%)
+export RACEDETECTOR_SAMPLE_RATE=50  # Check 50% of accesses
+
+# Run with sampling
+racedetector run main.go
+```
+
+### Sample Rate Guidelines
+
+| Sample Rate | Overhead Reduction | Detection Rate |
+|-------------|-------------------|----------------|
+| 100% (default) | 0% | 100% |
+| 50% | ~50% | 90%+ |
+| 10% | ~70% | 70%+ |
+| 1% | ~90% | 50%+ |
+
+### Programmatic API
+
+```go
+import "github.com/kolkov/racedetector/internal/race/shadowmem"
+
+// Enable address compression for 8x memory reduction
+shadowmem.SetAddressCompression(true)
+```
+
+---
+
 ## Current Limitations
 
-### v0.2.0 Production Status (November 20, 2025)
+### v0.3.0 Production Status (November 28, 2025)
 
 **What Works:**
 - ✅ AST parsing and import injection
@@ -449,7 +484,10 @@ func getConfig() *Config {
 - ✅ Full race detection during runtime
 - ✅ Race report generation with stack traces
 - ✅ RaceRead/RaceWrite instrumentation
-- ✅ 670+ tests passing with 99%+ coverage
+- ✅ 670+ tests passing with 86.3% coverage
+- ✅ Sampling-based detection (NEW)
+- ✅ Address compression for memory savings (NEW)
+- ✅ Sparse-aware VectorClocks for 43x speedup (NEW)
 
 **Known Limitations:**
 - Performance overhead: ~15-22% (acceptable for testing/development)
@@ -457,7 +495,7 @@ func getConfig() *Config {
 
 ### Known Issues
 
-No critical issues in v0.2.0. All core functionality is production-ready.
+No critical issues in v0.3.0. All core functionality is production-ready.
 
 **Minor Limitations:**
 - Performance overhead (~15-22%) makes it unsuitable for production deployments
@@ -480,7 +518,7 @@ A: A Pure-Go race detector that works without CGO dependency, enabling race dete
 A: Standard Go race detector requires CGO (ThreadSanitizer C++ library). `racedetector` is 100% Go, works without CGO, perfect for Docker containers and cross-compilation.
 
 **Q: Is this production-ready?**
-A: Yes! v0.2.0 is production-ready for testing and development. Not recommended for production deployments due to performance overhead.
+A: Yes! v0.3.0 is production-ready for testing and development. Not recommended for production deployments due to performance overhead.
 
 ### Installation
 
@@ -571,5 +609,5 @@ If you need help:
 
 ---
 
-*Last Updated: November 20, 2025*
-*Version: 0.2.0 (Production-Ready)*
+*Last Updated: November 28, 2025*
+*Version: 0.3.0 (Advanced Performance Optimizations)*

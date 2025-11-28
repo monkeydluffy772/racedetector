@@ -136,7 +136,7 @@ func raceread(addr uintptr) {
 	ctx := getCurrentContext()
 
 	// Extract program counter for the access.
-	// Currently collected but not used in reports (planned for v0.2.0).
+	// Currently collected but not used in reports (planned for v0.4.0).
 	_ = getcallerpc() // TODO: Pass to OnRead for enhanced stack trace reporting
 
 	// Perform race detection check.
@@ -1249,9 +1249,15 @@ func Reset() {
 // Init() performs the following initialization steps:
 //  1. Enables race detection
 //  2. Resets the TID counter to 0
-//  3. Creates a fresh detector instance
+//  3. Creates a fresh detector instance (with optional sampling from env)
 //  4. Initializes the TID reuse pool (Phase 2 Task 2.2)
 //  5. Allocates a RaceContext for the main goroutine with TID=0
+//
+// Environment Variables (v0.3.0):
+//
+//	RACEDETECTOR_SAMPLE_RATE=N  - Enable sampling with rate N (1=disabled, 10=1/10, 100=1/100)
+//	                             This trades detection rate for performance (~50-90% overhead reduction).
+//	                             Example: RACEDETECTOR_SAMPLE_RATE=10 ./myprogram
 //
 // Main Goroutine Convention:
 // By convention, the main goroutine (the one calling Init) always receives
@@ -1273,6 +1279,10 @@ func Reset() {
 //
 //	    // Your program code here...
 //	}
+//
+// Example with sampling:
+//
+//	$ RACEDETECTOR_SAMPLE_RATE=10 ./myprogram  # Check 1 in 10 accesses
 func Init() {
 	// Enable race detection.
 	enabled.Store(true)
@@ -1283,9 +1293,18 @@ func Init() {
 	// Reset allocation counter for cleanup trigger.
 	allocCounter.Store(0)
 
-	// Create a fresh detector instance.
-	// This clears any previous state and starts with clean shadow memory.
-	det = detector.NewDetector()
+	// Create a fresh detector instance with optional sampling (v0.3.0).
+	// Check RACEDETECTOR_SAMPLE_RATE environment variable.
+	opts := detector.DetectorOptions{}
+	if sampleRateStr := os.Getenv("RACEDETECTOR_SAMPLE_RATE"); sampleRateStr != "" {
+		if rate, err := strconv.ParseUint(sampleRateStr, 10, 64); err == nil && rate > 1 {
+			opts.SamplingEnabled = true
+			opts.SampleRate = rate
+			fmt.Fprintf(os.Stderr, "Race detector: sampling enabled (rate=%d, ~%.0f%% overhead reduction)\n",
+				rate, float64(rate-1)/float64(rate)*100)
+		}
+	}
+	det = detector.NewDetectorWithOptions(opts)
 
 	// Clear any existing goroutine contexts.
 	// This ensures a clean slate when re-initializing.

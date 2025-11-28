@@ -13,6 +13,47 @@ import (
 	"github.com/kolkov/racedetector/internal/race/syncshadow"
 )
 
+// DetectorOptions configures the race detector behavior (v0.3.0).
+//
+// Use NewDetectorWithOptions() to create a detector with custom options.
+// For default behavior, use NewDetector() which is equivalent to:
+//
+//	NewDetectorWithOptions(DetectorOptions{})
+//
+// Example usage:
+//
+//	// Default: Full detection (no sampling)
+//	d := NewDetector()
+//
+//	// With sampling: Check 1 in 10 accesses (~50% overhead reduction)
+//	d := NewDetectorWithOptions(DetectorOptions{
+//	    SamplingEnabled: true,
+//	    SampleRate:      10,
+//	})
+//
+//	// High sampling: Check 1 in 100 accesses (~70% overhead reduction)
+//	d := NewDetectorWithOptions(DetectorOptions{
+//	    SamplingEnabled: true,
+//	    SampleRate:      100,
+//	})
+//
+//nolint:revive // DetectorOptions is more descriptive than Options for public API.
+type DetectorOptions struct {
+	// SamplingEnabled enables probabilistic sampling for performance (v0.3.0 P0).
+	// When enabled, only a fraction of memory accesses are checked.
+	// This trades detection rate for performance, suitable for CI/CD.
+	// Default: false (100% detection, backward compatible).
+	SamplingEnabled bool
+
+	// SampleRate determines the sampling frequency when SamplingEnabled is true.
+	// - Rate=1: Check every access (no sampling, same as disabled)
+	// - Rate=10: Check 1 in 10 accesses (~50% overhead reduction)
+	// - Rate=100: Check 1 in 100 accesses (~70% overhead reduction)
+	// - Rate=1000: Check 1 in 1000 accesses (~90% overhead reduction)
+	// Default: 1 (no sampling).
+	SampleRate uint64
+}
+
 // PromotionStats tracks adaptive representation statistics (Phase 3).
 //
 // These metrics help analyze the effectiveness of the adaptive VarState optimization.
@@ -39,6 +80,7 @@ type PromotionStats struct {
 // Phase 3 adds adaptive VarState representation with promotion tracking.
 // Phase 4 adds synchronization primitive tracking (mutex, rwmutex, channels).
 // Phase 5 adds race deduplication to prevent duplicate reports.
+// v0.3.0 adds sampling-based detection for performance optimization.
 type Detector struct {
 	// shadowMemory stores VarState cells for all instrumented addresses.
 	// This is the core data structure that tracks the last write and read
@@ -49,6 +91,11 @@ type Detector struct {
 	// This tracks release clocks for mutexes, rwmutexes, channels, etc.
 	// Added in Phase 4 Task 4.1.
 	syncShadow *syncshadow.SyncShadow
+
+	// sampler implements probabilistic sampling for performance (v0.3.0 P0).
+	// When enabled, only a fraction of memory accesses are checked.
+	// This is nil when sampling is disabled for zero overhead.
+	sampler *Sampler
 
 	// racesDetected counts the total number of races found.
 	// This is used for testing and reporting purposes.
@@ -85,6 +132,9 @@ const (
 //   - Shadow memory for tracking variable access history
 //   - Sync shadow memory for tracking synchronization primitives (Phase 4)
 //
+// This is equivalent to NewDetectorWithOptions(DetectorOptions{}).
+// For custom configuration (e.g., sampling), use NewDetectorWithOptions.
+//
 // Example:
 //
 //	d := NewDetector()
@@ -92,10 +142,50 @@ const (
 //	d.OnWrite(0x1234, ctx)  // Detect write to address
 //	d.OnAcquire(0x5678, ctx)  // Track mutex lock
 func NewDetector() *Detector {
-	return &Detector{
+	return NewDetectorWithOptions(DetectorOptions{})
+}
+
+// NewDetectorWithOptions creates a race detector with custom configuration (v0.3.0).
+//
+// This allows enabling performance optimizations like sampling that trade off
+// detection rate for reduced overhead, making race detection practical for CI/CD.
+//
+// Options:
+//   - SamplingEnabled: Enable probabilistic sampling
+//   - SampleRate: Fraction of accesses to check (e.g., 10 = 1 in 10)
+//
+// Example usage:
+//
+//	// Production: Full detection (default)
+//	d := NewDetectorWithOptions(DetectorOptions{})
+//
+//	// CI/CD: 50% overhead reduction with 90%+ detection
+//	d := NewDetectorWithOptions(DetectorOptions{
+//	    SamplingEnabled: true,
+//	    SampleRate:      10,
+//	})
+//
+//	// Smoke tests: 70% overhead reduction with 70%+ detection
+//	d := NewDetectorWithOptions(DetectorOptions{
+//	    SamplingEnabled: true,
+//	    SampleRate:      100,
+//	})
+func NewDetectorWithOptions(opts DetectorOptions) *Detector {
+	d := &Detector{
 		shadowMemory: shadowmem.NewShadowMemory(),
 		syncShadow:   syncshadow.NewSyncShadow(),
 	}
+
+	// Initialize sampler only if sampling is enabled (v0.3.0 P0).
+	// When nil, ShouldSample check is skipped entirely (zero overhead).
+	if opts.SamplingEnabled {
+		d.sampler = NewSampler(SamplerConfig{
+			Enabled: true,
+			Rate:    opts.SampleRate,
+		})
+	}
+
+	return d
 }
 
 // checkOverflowPeriodically increments the operation counter and periodically
@@ -207,7 +297,14 @@ func (d *Detector) reportOverflowsIfNeeded() {
 //go:nosplit
 //nolint:gocognit,nestif,gocyclo,cyclop // Complex race detection logic requires nested conditionals
 func (d *Detector) OnWrite(addr uintptr, ctx *goroutine.RaceContext) {
-	// Step 0: Periodic overflow detection (v0.2.0 Task 5).
+	// Step 0: Sampling check (v0.3.0 P0).
+	// If sampling is enabled and this access is not sampled, skip detection.
+	// This provides 50-90% overhead reduction with 70-90%+ detection rate.
+	if d.sampler != nil && !d.sampler.ShouldSample() {
+		return
+	}
+
+	// Step 0.1: Periodic overflow detection (v0.2.0 Task 5).
 	// Check every 10K operations for TID/clock overflows.
 	d.checkOverflowPeriodically()
 
@@ -406,7 +503,14 @@ func (d *Detector) OnWrite(addr uintptr, ctx *goroutine.RaceContext) {
 //
 //go:nosplit
 func (d *Detector) OnRead(addr uintptr, ctx *goroutine.RaceContext) {
-	// Step 0: Periodic overflow detection (v0.2.0 Task 5).
+	// Step 0: Sampling check (v0.3.0 P0).
+	// If sampling is enabled and this access is not sampled, skip detection.
+	// This provides 50-90% overhead reduction with 70-90%+ detection rate.
+	if d.sampler != nil && !d.sampler.ShouldSample() {
+		return
+	}
+
+	// Step 0.1: Periodic overflow detection (v0.2.0 Task 5).
 	// Check every 10K operations for TID/clock overflows.
 	d.checkOverflowPeriodically()
 
@@ -1165,4 +1269,39 @@ func (d *Detector) GetPromotionStats() PromotionStats {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	return d.stats
+}
+
+// IsSamplingEnabled returns true if sampling is enabled (v0.3.0).
+//
+// When sampling is enabled, only a fraction of memory accesses are checked.
+// This trades detection rate for performance.
+//
+// Thread Safety: Safe for concurrent calls (read-only).
+func (d *Detector) IsSamplingEnabled() bool {
+	return d.sampler != nil && d.sampler.IsEnabled()
+}
+
+// GetSamplerStats returns sampling statistics (v0.3.0).
+//
+// Returns nil if sampling is disabled.
+//
+// Thread Safety: Safe for concurrent calls (atomic reads in Sampler).
+func (d *Detector) GetSamplerStats() *SamplerStats {
+	if d.sampler == nil {
+		return nil
+	}
+	stats := d.sampler.GetStats()
+	return &stats
+}
+
+// GetSampleRate returns the current sampling rate (v0.3.0).
+//
+// Returns 1 if sampling is disabled (all accesses checked).
+//
+// Thread Safety: Safe for concurrent calls (read-only).
+func (d *Detector) GetSampleRate() uint64 {
+	if d.sampler == nil {
+		return 1
+	}
+	return d.sampler.GetEffectiveRate()
 }

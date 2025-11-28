@@ -604,3 +604,97 @@ func TestCASBasedShadow_GetCollisionStats(t *testing.T) {
 		t.Errorf("Collision rate %.2f%% exceeds 1%% (unexpected)", collisionRate)
 	}
 }
+
+// ========================================
+// v0.3.0 Address Compression Tests (P1)
+// ========================================
+
+// TestCASBasedShadow_AddressCompression verifies 8-byte address alignment.
+func TestCASBasedShadow_AddressCompression(t *testing.T) {
+	shadow := NewCASBasedShadow()
+
+	// Address compression is enabled by default.
+	if !shadow.GetAddressCompression() {
+		t.Error("Address compression should be enabled by default")
+	}
+
+	// Test that addresses within same 8-byte block share the same VarState.
+	baseAddr := uintptr(0x1000) // Aligned to 8 bytes.
+	vs1, _ := shadow.LoadOrStore(baseAddr)
+	vs1.W = epoch.NewEpoch(1, 100)
+
+	// Addresses +1 to +7 should return the same VarState (same 8-byte block).
+	for offset := uintptr(1); offset < 8; offset++ {
+		addr := baseAddr + offset
+		vs, created := shadow.LoadOrStore(addr)
+		if created {
+			t.Errorf("LoadOrStore(0x%x) created new cell, expected existing", addr)
+		}
+		if vs != vs1 {
+			t.Errorf("LoadOrStore(0x%x) returned different VarState: %p vs %p", addr, vs, vs1)
+		}
+	}
+
+	// Address +8 should create a NEW VarState (different 8-byte block).
+	vs2, created := shadow.LoadOrStore(baseAddr + 8)
+	if !created {
+		t.Error("LoadOrStore(baseAddr+8) should create new cell")
+	}
+	if vs2 == vs1 {
+		t.Error("baseAddr+8 should have different VarState than baseAddr")
+	}
+
+	t.Logf("v0.3.0 Address compression: addresses within 8-byte block share VarState")
+}
+
+// TestCASBasedShadow_AddressCompressionDisabled verifies disabling works.
+func TestCASBasedShadow_AddressCompressionDisabled(t *testing.T) {
+	shadow := NewCASBasedShadow()
+	shadow.SetAddressCompression(false) // Disable compression.
+
+	if shadow.GetAddressCompression() {
+		t.Error("Address compression should be disabled after SetAddressCompression(false)")
+	}
+
+	// With compression disabled, each address gets its own VarState.
+	baseAddr := uintptr(0x2000)
+	vs1, _ := shadow.LoadOrStore(baseAddr)
+	vs1.W = epoch.NewEpoch(1, 100)
+
+	// Even +1 should get a different VarState.
+	vs2, created := shadow.LoadOrStore(baseAddr + 1)
+	if !created {
+		t.Error("With compression disabled, baseAddr+1 should create new cell")
+	}
+	if vs2 == vs1 {
+		t.Error("With compression disabled, baseAddr+1 should have different VarState")
+	}
+
+	t.Logf("v0.3.0 Address compression disabled: each address gets unique VarState")
+}
+
+// TestAlignAddr verifies the address alignment function.
+func TestAlignAddr(t *testing.T) {
+	tests := []struct {
+		input    uintptr
+		expected uintptr
+	}{
+		{0x1000, 0x1000}, // Already aligned.
+		{0x1001, 0x1000}, // Align down.
+		{0x1007, 0x1000}, // Align down.
+		{0x1008, 0x1008}, // Already aligned.
+		{0x1009, 0x1008}, // Align down.
+		{0x100F, 0x1008}, // Align down.
+		{0x0000, 0x0000}, // Zero stays zero.
+		{0x0007, 0x0000}, // Small addresses.
+	}
+
+	for _, tt := range tests {
+		result := alignAddr(tt.input)
+		if result != tt.expected {
+			t.Errorf("alignAddr(0x%x) = 0x%x, want 0x%x", tt.input, result, tt.expected)
+		}
+	}
+
+	t.Log("v0.3.0 alignAddr() correctly aligns to 8-byte boundaries")
+}

@@ -225,7 +225,7 @@ func BenchmarkGetGoroutineID_CacheMisses(b *testing.B) {
 // This isolates the raw TLS access performance.
 // NOTE: Disabled for v0.1.0 - assembly implementation is disabled for stability.
 func BenchmarkGetGoroutineID_Assembly(b *testing.B) {
-	b.Skip("Assembly implementation disabled for v0.1.0 - will be re-enabled in v0.2.0")
+	b.Skip("Assembly implementation disabled - will be re-enabled in v0.4.0")
 
 	// Kept for future when assembly is re-enabled:
 	// if runtime.GOARCH != "amd64" {
@@ -240,7 +240,7 @@ func BenchmarkGetGoroutineID_Assembly(b *testing.B) {
 // BenchmarkGetGoroutineID_FieldAccess benchmarks the goid field dereference (amd64 only).
 // NOTE: Disabled for v0.1.0 - assembly implementation is disabled for stability.
 func BenchmarkGetGoroutineID_FieldAccess(b *testing.B) {
-	b.Skip("Assembly implementation disabled for v0.1.0 - will be re-enabled in v0.2.0")
+	b.Skip("Assembly implementation disabled - will be re-enabled in v0.4.0")
 
 	// Kept for future when assembly is re-enabled:
 	// if runtime.GOARCH != "amd64" {

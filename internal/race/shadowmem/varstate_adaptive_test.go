@@ -127,9 +127,8 @@ func TestVarState_WriteDemotesReadClock(t *testing.T) {
 		t.Fatal("Should be promoted after PromoteToReadClock")
 	}
 
-	// Simulate write: Clear read tracking.
-	vs.SetReadEpoch(0)
-	vs.readClock = nil // Demote.
+	// Simulate write: Clear read tracking using Demote().
+	vs.Demote()
 
 	// Should no longer be promoted.
 	if vs.IsPromoted() {
@@ -170,8 +169,7 @@ func TestVarState_PromotionStats(t *testing.T) {
 	}
 
 	// Step 3: Demotion (write).
-	vs.SetReadEpoch(0)
-	vs.readClock = nil
+	vs.Demote()
 	if vs.IsPromoted() {
 		t.Error("Step 3: Should be demoted")
 	}
@@ -312,15 +310,17 @@ func TestVarState_HappensBeforeReads_NoPromotion(t *testing.T) {
 }
 
 // TestVarState_String_PromotedFormat tests String() output for promoted state.
+// v0.3.0: Updated for Enhanced Read-Shared format "R:[epochs...]".
 func TestVarState_String_PromotedFormat(t *testing.T) {
 	vs := NewVarState()
 	vs.W = epoch.NewEpoch(5, 100)
 
-	// Unpromoted.
+	// Unpromoted (single reader in brackets).
 	vs.SetReadEpoch(epoch.NewEpoch(3, 50))
 	unpromoted := vs.String()
-	if unpromoted != "W:100@5 R:50@3" {
-		t.Errorf("Unpromoted String() = %q, want %q", unpromoted, "W:100@5 R:50@3")
+	// v0.3.0: New format with brackets for inline slots
+	if unpromoted != "W:100@5 R:[50@3]" {
+		t.Errorf("Unpromoted String() = %q, want %q", unpromoted, "W:100@5 R:[50@3]")
 	}
 
 	// Promoted.
@@ -337,6 +337,99 @@ func TestVarState_String_PromotedFormat(t *testing.T) {
 
 	t.Logf("Unpromoted: %s", unpromoted)
 	t.Logf("Promoted: %s", promoted)
+}
+
+// TestVarState_InlineSlots_4Readers tests v0.3.0 Enhanced Read-Shared with 4 inline slots.
+func TestVarState_InlineSlots_4Readers(t *testing.T) {
+	vs := NewVarState()
+
+	// Add 4 readers (should all fit in inline slots, no VectorClock allocation).
+	for i := uint16(1); i <= 4; i++ {
+		added := vs.AddReader(epoch.NewEpoch(i, uint64(100*i)))
+		if !added {
+			t.Errorf("AddReader(%d) should succeed for inline slot", i)
+		}
+	}
+
+	// Should NOT be promoted (4 readers fit in inline slots).
+	if vs.IsPromoted() {
+		t.Error("4 readers should fit in inline slots without promotion")
+	}
+
+	// Verify all 4 readers are tracked.
+	count := vs.GetReaderCount()
+	if count != 4 {
+		t.Errorf("GetReaderCount() = %d, want 4", count)
+	}
+
+	// Verify epochs.
+	epochs := vs.GetReadEpochs()
+	if len(epochs) != 4 {
+		t.Errorf("GetReadEpochs() length = %d, want 4", len(epochs))
+	}
+
+	// Try to add 5th reader (should fail, need promotion).
+	added := vs.AddReader(epoch.NewEpoch(5, 500))
+	if added {
+		t.Error("AddReader(5) should fail when slots are full")
+	}
+
+	// Now promote to VectorClock.
+	vc := vectorclock.New()
+	vc.Set(5, 500)
+	vs.PromoteToReadClock(vc)
+
+	// Should now be promoted.
+	if !vs.IsPromoted() {
+		t.Error("Should be promoted after PromoteToReadClock")
+	}
+
+	// Verify all 5 readers in VectorClock.
+	rc := vs.GetReadClock()
+	if rc == nil {
+		t.Fatal("ReadClock should not be nil after promotion")
+	}
+
+	for i := uint16(1); i <= 4; i++ {
+		if rc.Get(i) != uint32(100*int(i)) {
+			t.Errorf("ReadClock[%d] = %d, want %d", i, rc.Get(i), 100*i)
+		}
+	}
+	if rc.Get(5) != 500 {
+		t.Errorf("ReadClock[5] = %d, want 500", rc.Get(5))
+	}
+
+	t.Logf("v0.3.0 Enhanced Read-Shared: 4 inline slots + promotion to VectorClock works correctly")
+}
+
+// TestVarState_AddReader_SameTID tests that AddReader updates existing TID.
+func TestVarState_AddReader_SameTID(t *testing.T) {
+	vs := NewVarState()
+
+	// Add reader TID=5.
+	vs.AddReader(epoch.NewEpoch(5, 100))
+	if vs.GetReaderCount() != 1 {
+		t.Errorf("GetReaderCount() = %d, want 1", vs.GetReaderCount())
+	}
+
+	// Add same TID=5 with higher clock (should update, not add new slot).
+	vs.AddReader(epoch.NewEpoch(5, 200))
+	if vs.GetReaderCount() != 1 {
+		t.Errorf("GetReaderCount() = %d, want 1 (should update existing slot)", vs.GetReaderCount())
+	}
+
+	// Verify updated epoch.
+	epochs := vs.GetReadEpochs()
+	if len(epochs) != 1 {
+		t.Fatalf("GetReadEpochs() length = %d, want 1", len(epochs))
+	}
+
+	tid, clock := epochs[0].Decode()
+	if tid != 5 || clock != 200 {
+		t.Errorf("Updated epoch = (tid=%d, clock=%d), want (5, 200)", tid, clock)
+	}
+
+	t.Logf("AddReader correctly updates existing TID slot")
 }
 
 // TestVarState_Reset_ClearsPromotion tests that Reset() demotes promoted state.

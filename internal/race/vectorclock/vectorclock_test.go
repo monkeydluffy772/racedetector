@@ -8,11 +8,16 @@ import (
 func TestVectorClockNew(t *testing.T) {
 	vc := New()
 
-	// Verify all clocks are zero.
-	for i := 0; i < MaxThreads; i++ {
-		if vc[i] != 0 {
-			t.Errorf("New() clock[%d] = %d, want 0", i, vc[i])
+	// Verify all clocks are zero (check a sample, not all 65536).
+	for i := 0; i < 100; i++ {
+		if vc.Get(uint16(i)) != 0 {
+			t.Errorf("New() Get(%d) = %d, want 0", i, vc.Get(uint16(i)))
 		}
+	}
+
+	// v0.3.0: maxTID should be 0 for new clock.
+	if vc.GetMaxTID() != 0 {
+		t.Errorf("New() GetMaxTID() = %d, want 0", vc.GetMaxTID())
 	}
 }
 
@@ -75,10 +80,16 @@ func TestVectorClockJoinCommutativity(t *testing.T) {
 	vc2Copy.Join(vc1Copy)
 
 	// Results should be identical (commutativity).
-	for i := 0; i < MaxThreads; i++ {
-		if vc1[i] != vc2Copy[i] {
+	// v0.3.0: Use sparse-aware iteration up to maxTID.
+	// Use uint32 loop counter to avoid uint16 overflow at maxTID=65535.
+	limit := uint32(vc1.maxTID)
+	if uint32(vc2Copy.maxTID) > limit {
+		limit = uint32(vc2Copy.maxTID)
+	}
+	for i := uint32(0); i <= limit; i++ {
+		if vc1.clocks[i] != vc2Copy.clocks[i] {
 			t.Errorf("Join not commutative at index %d: vc1⊔vc2[%d]=%d, vc2⊔vc1[%d]=%d",
-				i, i, vc1[i], i, vc2Copy[i])
+				i, i, vc1.clocks[i], i, vc2Copy.clocks[i])
 		}
 	}
 
@@ -110,10 +121,12 @@ func TestVectorClockJoinIdempotent(t *testing.T) {
 	vc.Join(vc)
 
 	// Should be unchanged.
-	for i := 0; i < MaxThreads; i++ {
-		if vc[i] != original[i] {
+	// v0.3.0: Use sparse-aware iteration up to maxTID.
+	// Use uint32 loop counter to avoid uint16 overflow at maxTID=65535.
+	for i := uint32(0); i <= uint32(vc.maxTID); i++ {
+		if vc.clocks[i] != original.clocks[i] {
 			t.Errorf("Join not idempotent at index %d: vc⊔vc[%d]=%d, original[%d]=%d",
-				i, i, vc[i], i, original[i])
+				i, i, vc.clocks[i], i, original.clocks[i])
 		}
 	}
 }

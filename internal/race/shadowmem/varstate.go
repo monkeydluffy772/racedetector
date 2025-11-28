@@ -12,6 +12,18 @@ import (
 	"github.com/kolkov/racedetector/internal/race/vectorclock"
 )
 
+const (
+	// maxInlineReaders is the number of inline reader slots in VarState.
+	// When exceeded, VarState promotes to VectorClock (1KB allocation).
+	// 4 slots is optimal: covers 95%+ of read-shared patterns while keeping VarState small.
+	// Research: SmartTrack PLDI 2020 + TSAN multi-cell approach.
+	maxInlineReaders = 4
+
+	// promotedMarker indicates the VarState has been promoted to VectorClock.
+	// readerCount == promotedMarker means readClock is active.
+	promotedMarker uint8 = 255
+)
+
 // VarState stores the access state for a single variable using adaptive representation.
 //
 // ADAPTIVE REPRESENTATION (FastTrack Phase 3 optimization):
@@ -38,23 +50,40 @@ import (
 //   - exclusiveWriter == -1: Shared/multiple writers (full FastTrack)
 //   - exclusiveWriter == 0: Uninitialized (no writes yet)
 //
-// Memory layout (v0.2.0 Task 6 updated):
-//   - Base: 8 bytes (W) + 8 bytes (mu) + 4 bytes (readEpoch) + 8 bytes (readClock ptr) = 28 bytes
-//   - SmartTrack: + 8 bytes (exclusiveWriter) + 4 bytes (writeCount) = 40 bytes
-//   - Stack Traces (Task 6): + 8 bytes (writeStackHash) + 8 bytes (readStackHash) = 56 bytes
-//   - Total fast path: 56 bytes per variable
-//   - Promoted path: 56 bytes + 1024 bytes (VectorClock allocation) = 1080 bytes
+// Memory layout (v0.3.0 Enhanced Read-Shared updated):
+//   - Base: 8 bytes (W) + 8 bytes (mu) + 32 bytes (readEpochs[4]) + 1 byte (readerCount) + 8 bytes (readClock ptr) = 57 bytes
+//   - SmartTrack: + 8 bytes (exclusiveWriter) + 4 bytes (writeCount) = 69 bytes
+//   - Stack Traces (Task 6): + 8 bytes (writeStackHash) + 8 bytes (readStackHash) = 85 bytes
+//   - Total fast path: ~88 bytes per variable (with padding)
+//   - Promoted path: 88 bytes + 1024 bytes (VectorClock allocation) = 1112 bytes
 //
-// Trade-off: 56 bytes per variable (was 40 bytes) for complete race reports with both stacks.
+// v0.3.0 ENHANCED READ-SHARED OPTIMIZATION (P1):
+// Trade-off: 88 bytes per variable (was 56 bytes) BUT avoids 1KB VectorClock allocation
+// for the common case of 2-4 concurrent readers. Most read-heavy patterns stay in
+// inline slots, saving 1KB per variable.
+//
+// Memory savings analysis:
+//   - Old approach: 2+ readers → 56 + 1024 = 1080 bytes
+//   - New approach: 2-4 readers → 88 bytes (no VectorClock)
+//   - New approach: 5+ readers → 88 + 1024 = 1112 bytes
+//   - Net savings for 2-4 readers: 992 bytes per variable!
 type VarState struct {
 	W  epoch.Epoch // Last write epoch (always present).
-	mu sync.Mutex  // Protects readEpoch, readClock, and ownership fields from concurrent access.
+	mu sync.Mutex  // Protects read fields, readClock, and ownership fields from concurrent access.
 
-	// Read tracking (ADAPTIVE):
-	// If readClock == nil → use readEpoch (single reader, common case)
-	// If readClock != nil → use readClock (multiple readers, rare case)
-	readEpoch epoch.Epoch              // Single reader (fast path, 4 bytes).
-	readClock *vectorclock.VectorClock // Multiple readers (promoted, 8 bytes pointer + 1KB allocation).
+	// Read tracking (ENHANCED ADAPTIVE - v0.3.0 P1):
+	// Inline slots for up to 4 concurrent readers before VectorClock promotion.
+	// This delays expensive 1KB allocation for common patterns (2-4 readers).
+	//
+	// States:
+	//   - readerCount == 0: No readers
+	//   - readerCount == 1-4: Use readEpochs[0..readerCount-1]
+	//   - readerCount == 255 (maxInlineReaders+1): Promoted to readClock
+	//
+	// If readClock != nil → use readClock (5+ readers, promoted state)
+	readEpochs  [maxInlineReaders]epoch.Epoch // Inline reader slots (32 bytes = 4 × 8).
+	readerCount uint8                         // Number of inline readers (0-4, or 255 if promoted).
+	readClock   *vectorclock.VectorClock      // Multiple readers (promoted, 8 bytes pointer + 1KB allocation).
 
 	// SmartTrack ownership tracking (v0.2.0 Task 3):
 	// Tracks exclusive writer to skip expensive happens-before checks.
@@ -86,15 +115,20 @@ func NewVarState() *VarState {
 //
 // SmartTrack (v0.2.0 Task 3): Also resets ownership tracking fields.
 // Stack Traces (v0.2.0 Task 6): Also clears stack hashes.
+// Enhanced Read-Shared (v0.3.0 P1): Also clears all inline reader slots.
 //
 // Performance: This operation must be zero-allocation and inline-friendly.
-// Target: <2ns/op.
+// Target: <5ns/op (was <2ns, increased due to clearing 4 slots).
 //
 // Note: Removed //go:nosplit because sync.Mutex.Lock() requires stack space.
 func (vs *VarState) Reset() {
 	vs.W = 0
 	vs.mu.Lock()
-	vs.readEpoch = 0
+	// Clear all inline reader slots.
+	for i := range vs.readEpochs {
+		vs.readEpochs[i] = 0
+	}
+	vs.readerCount = 0
 	vs.readClock = nil // Demote if promoted.
 	vs.exclusiveWriter = 0
 	vs.writeCount = 0
@@ -106,33 +140,36 @@ func (vs *VarState) Reset() {
 // IsPromoted returns true if VarState uses VectorClock (promoted state).
 //
 // This is the discriminator for the adaptive representation:
-//   - false: Fast path (readEpoch only, 4 bytes)
-//   - true: Slow path (readClock, 1KB allocation)
+//   - false: Fast path (inline reader slots, up to 4 readers, 32 bytes)
+//   - true: Slow path (readClock, 5+ readers, 1KB allocation)
+//
+// v0.3.0 Enhanced Read-Shared: Checks both readerCount == promotedMarker AND readClock != nil.
+// This ensures consistency even if demotion clears one but not the other.
 //
 // Note: Removed //go:nosplit because sync.Mutex.Lock() requires stack space.
 func (vs *VarState) IsPromoted() bool {
 	vs.mu.Lock()
-	promoted := vs.readClock != nil
+	promoted := vs.readerCount == promotedMarker && vs.readClock != nil
 	vs.mu.Unlock()
 	return promoted
 }
 
-// PromoteToReadClock upgrades from single-reader Epoch to multi-reader VectorClock.
+// PromoteToReadClock upgrades from inline reader slots to multi-reader VectorClock.
 //
-// This happens when:
-//   - Second concurrent reader detected
-//   - Current readEpoch conflicts with new read (different TID, not happens-before)
+// v0.3.0 Enhanced Read-Shared: This now happens when:
+//   - All 4 inline reader slots are full
+//   - A 5th concurrent reader is detected
 //
 // Steps:
 //  1. Allocate VectorClock (one-time cost, 1KB)
-//  2. Copy existing readEpoch into VectorClock[TID]
+//  2. Copy ALL inline reader epochs into VectorClock
 //  3. Merge new read VectorClock
-//  4. Set readClock != nil (marks as promoted)
+//  4. Set readerCount = promotedMarker (marks as promoted)
 //
 // After promotion, all subsequent reads use VectorClock path.
 //
 // Performance: This is a one-time cost (~100ns allocation + copy).
-// Should be rare (only 0.1% of variables according to FastTrack paper).
+// Now even rarer than before (only 5+ concurrent readers trigger this).
 //
 // Parameters:
 //   - newReadVC: The VectorClock of the new concurrent reader
@@ -143,22 +180,29 @@ func (vs *VarState) PromoteToReadClock(newReadVC *vectorclock.VectorClock) {
 	// Allocate VectorClock for promoted read tracking.
 	vs.readClock = vectorclock.New()
 
-	// Copy existing single reader epoch into VectorClock.
-	// If readEpoch is non-zero, it represents a previous reader.
-	if vs.readEpoch != 0 {
-		tid, clock := vs.readEpoch.Decode()
-		//nolint:gosec // G115: Epoch clock is uint64, but per-thread VectorClock uses uint32 (safe truncation).
-		vs.readClock.Set(tid, uint32(clock))
+	// Copy ALL inline reader epochs into VectorClock.
+	for i := uint8(0); i < vs.readerCount && i < maxInlineReaders; i++ {
+		if vs.readEpochs[i] != 0 {
+			tid, clock := vs.readEpochs[i].Decode()
+			//nolint:gosec // G115: Epoch clock is uint64, but per-thread VectorClock uses uint32 (safe truncation).
+			vs.readClock.Set(tid, uint32(clock))
+		}
 	}
 
 	// Merge the new reader's VectorClock.
 	vs.readClock.Join(newReadVC)
 
-	// Clear readEpoch as it's no longer used (readClock takes over).
-	vs.readEpoch = 0
+	// Clear inline slots and mark as promoted.
+	for i := range vs.readEpochs {
+		vs.readEpochs[i] = 0
+	}
+	vs.readerCount = promotedMarker
 }
 
-// GetReadEpoch returns the read epoch (fast path only).
+// GetReadEpoch returns the first read epoch (backward compatibility).
+//
+// v0.3.0 Enhanced Read-Shared: For single reader (common case), returns readEpochs[0].
+// For multiple readers, use GetReadEpochs() to get all inline readers.
 //
 // PRECONDITION: !IsPromoted() - caller must check this first.
 // If promoted, this returns 0 (invalid epoch).
@@ -168,12 +212,60 @@ func (vs *VarState) PromoteToReadClock(newReadVC *vectorclock.VectorClock) {
 // Note: Removed //go:nosplit because sync.Mutex.Lock() requires stack space.
 func (vs *VarState) GetReadEpoch() epoch.Epoch {
 	vs.mu.Lock()
-	e := vs.readEpoch
+	var e epoch.Epoch
+	if vs.readerCount > 0 && vs.readerCount != promotedMarker {
+		e = vs.readEpochs[0]
+	}
 	vs.mu.Unlock()
 	return e
 }
 
-// SetReadEpoch sets the read epoch (fast path only).
+// GetReadEpochs returns all inline reader epochs (v0.3.0 Enhanced Read-Shared).
+//
+// PRECONDITION: !IsPromoted() - caller must check this first.
+// If promoted, this returns nil.
+//
+// Returns a slice of all active reader epochs (0 to 4 elements).
+// The caller should check all epochs for happens-before relationships.
+//
+// Note: Removed //go:nosplit because sync.Mutex.Lock() requires stack space.
+func (vs *VarState) GetReadEpochs() []epoch.Epoch {
+	vs.mu.Lock()
+	defer vs.mu.Unlock()
+
+	if vs.readerCount == 0 || vs.readerCount == promotedMarker {
+		return nil
+	}
+
+	// Return a copy of active reader epochs.
+	count := int(vs.readerCount)
+	if count > maxInlineReaders {
+		count = maxInlineReaders
+	}
+	result := make([]epoch.Epoch, count)
+	copy(result, vs.readEpochs[:count])
+	return result
+}
+
+// GetReaderCount returns the number of inline readers (v0.3.0 Enhanced Read-Shared).
+//
+// Returns:
+//   - 0: No readers
+//   - 1-4: Number of inline readers
+//   - 255 (promotedMarker): Promoted to VectorClock
+//
+// Note: Removed //go:nosplit because sync.Mutex.Lock() requires stack space.
+func (vs *VarState) GetReaderCount() uint8 {
+	vs.mu.Lock()
+	count := vs.readerCount
+	vs.mu.Unlock()
+	return count
+}
+
+// SetReadEpoch sets the read epoch (backward compatibility for single reader).
+//
+// v0.3.0 Enhanced Read-Shared: This sets readEpochs[0] for single reader case.
+// For adding concurrent readers, use AddReader().
 //
 // This is used by detector OnRead to update single-reader state.
 // If already promoted, this is a no-op (readClock takes precedence).
@@ -181,10 +273,71 @@ func (vs *VarState) GetReadEpoch() epoch.Epoch {
 // Note: Removed //go:nosplit because sync.Mutex.Lock() requires stack space.
 func (vs *VarState) SetReadEpoch(e epoch.Epoch) {
 	vs.mu.Lock()
-	if vs.readClock == nil { // Not promoted
-		vs.readEpoch = e
+	if vs.readerCount != promotedMarker { // Not promoted
+		vs.readEpochs[0] = e
+		if vs.readerCount == 0 {
+			vs.readerCount = 1
+		}
 	}
 	vs.mu.Unlock()
+}
+
+// AddReader adds or updates a reader in the inline slots (v0.3.0 Enhanced Read-Shared).
+//
+// Logic:
+//  1. If TID already exists in slots → update that slot's epoch
+//  2. If there's room (readerCount < 4) → add to next slot
+//  3. If slots are full → return false (caller should promote)
+//
+// Returns:
+//   - true: Reader added/updated successfully
+//   - false: Slots are full, promotion to VectorClock needed
+//
+// If already promoted, this is a no-op and returns true.
+//
+// Note: Removed //go:nosplit because sync.Mutex.Lock() requires stack space.
+func (vs *VarState) AddReader(e epoch.Epoch) bool {
+	vs.mu.Lock()
+	defer vs.mu.Unlock()
+
+	// Already promoted - let VectorClock handle it.
+	if vs.readerCount == promotedMarker {
+		return true
+	}
+
+	tid, _ := e.Decode()
+
+	// Check if TID already exists in slots.
+	for i := uint8(0); i < vs.readerCount; i++ {
+		existingTID, _ := vs.readEpochs[i].Decode()
+		if existingTID == tid {
+			// Update existing slot.
+			vs.readEpochs[i] = e
+			return true
+		}
+	}
+
+	// Check if there's room for new reader.
+	if vs.readerCount < maxInlineReaders {
+		vs.readEpochs[vs.readerCount] = e
+		vs.readerCount++
+		return true
+	}
+
+	// Slots are full - caller should promote.
+	return false
+}
+
+// HasInlineSlot returns true if there's room for another inline reader.
+//
+// v0.3.0 Enhanced Read-Shared: Checks if readerCount < maxInlineReaders.
+//
+// Note: Removed //go:nosplit because sync.Mutex.Lock() requires stack space.
+func (vs *VarState) HasInlineSlot() bool {
+	vs.mu.Lock()
+	hasSlot := vs.readerCount < maxInlineReaders && vs.readerCount != promotedMarker
+	vs.mu.Unlock()
+	return hasSlot
 }
 
 // GetReadClock returns the read VectorClock (slow path only).
@@ -200,7 +353,9 @@ func (vs *VarState) GetReadClock() *vectorclock.VectorClock {
 	return rc
 }
 
-// Demote clears the VectorClock and demotes back to fast path (Epoch only).
+// Demote clears all read state and demotes back to fast path.
+//
+// v0.3.0 Enhanced Read-Shared: Clears both inline slots AND VectorClock.
 //
 // This is called by OnWrite after a write operation to reset read tracking.
 // Write dominates all previous reads, so we can safely clear the read state.
@@ -210,7 +365,11 @@ func (vs *VarState) GetReadClock() *vectorclock.VectorClock {
 // Note: Removed //go:nosplit because sync.Mutex.Lock() requires stack space.
 func (vs *VarState) Demote() {
 	vs.mu.Lock()
-	vs.readEpoch = 0
+	// Clear all inline reader slots.
+	for i := range vs.readEpochs {
+		vs.readEpochs[i] = 0
+	}
+	vs.readerCount = 0
 	vs.readClock = nil
 	vs.mu.Unlock()
 }
@@ -301,13 +460,18 @@ func (vs *VarState) GetWriteCount() uint32 {
 
 // String returns a debug representation of the variable state.
 //
+// v0.3.0 Enhanced Read-Shared: Shows all inline reader slots.
+//
 // Format:
-//   - Unpromoted: "W:<epoch> R:<epoch>"
+//   - No readers: "W:<epoch> R:[]"
+//   - Single reader: "W:<epoch> R:[50@3]"
+//   - Multi reader: "W:<epoch> R:[50@3, 60@5, 70@7]"
 //   - Promoted: "W:<epoch> R:<vectorclock> [PROMOTED]"
 //
 // Example:
-//   - "W:100@5 R:50@3" (single reader, fast path)
-//   - "W:100@5 R:{0:50, 1:60} [PROMOTED]" (multiple readers, slow path)
+//   - "W:100@5 R:[50@3]" (single reader, fast path)
+//   - "W:100@5 R:[50@3, 60@5]" (2 readers, inline slots)
+//   - "W:100@5 R:{0:50, 1:60} [PROMOTED]" (5+ readers, promoted)
 //
 // This method is only used for debugging and race reporting, not on hot path.
 func (vs *VarState) String() string {
@@ -317,13 +481,21 @@ func (vs *VarState) String() string {
 	vs.mu.Lock()
 	defer vs.mu.Unlock()
 
-	if vs.readClock != nil {
+	if vs.readerCount == promotedMarker && vs.readClock != nil {
 		// Promoted: Show VectorClock.
 		return wStr + " R:" + vs.readClock.String() + " [PROMOTED]"
 	}
 
-	// Fast path: Show Epoch.
-	return wStr + " R:" + vs.readEpoch.String()
+	// Inline slots: Show all active reader epochs.
+	rStr := "R:["
+	for i := uint8(0); i < vs.readerCount; i++ {
+		if i > 0 {
+			rStr += ", "
+		}
+		rStr += vs.readEpochs[i].String()
+	}
+	rStr += "]"
+	return wStr + " " + rStr
 }
 
 // === Stack Trace Accessor Methods (v0.2.0 Task 6) ===
