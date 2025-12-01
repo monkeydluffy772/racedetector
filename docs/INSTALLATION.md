@@ -37,7 +37,7 @@ racedetector --version
 
 **Expected output:**
 ```
-racedetector version 0.3.0
+racedetector version 0.3.1
 ```
 
 **Installation location:**
@@ -71,15 +71,15 @@ sudo mv racedetector /usr/local/bin/
 racedetector --version
 ```
 
-### Method 3: Download Pre-built Binary (Future)
+### Method 3: Download Pre-built Binary
 
-**Coming soon!** Pre-built binaries will be available in GitHub Releases:
+Pre-built binaries are available in GitHub Releases:
 
 - Linux (amd64, arm64)
 - macOS (amd64, arm64/M1)
 - Windows (amd64)
 
-Once available, visit [Releases](https://github.com/kolkov/racedetector/releases) and download for your platform.
+Visit [Releases](https://github.com/kolkov/racedetector/releases) and download for your platform.
 
 ---
 
@@ -198,7 +198,7 @@ racedetector --version
 
 ```bash
 cd racedetector
-git pull origin master
+git pull origin main
 go build -o racedetector ./cmd/racedetector
 ```
 
@@ -301,4 +301,4 @@ If you encounter issues:
 ---
 
 *Last Updated: November 28, 2025*
-*Version: 0.3.0*
+*Version: 0.3.1*

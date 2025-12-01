@@ -259,7 +259,7 @@ racedetector test -run=TestMyFunction
 racedetector test -bench=. -benchmem
 ```
 
-**Status:** ✅ Production-ready
+**Status:** Planned for v0.4.0
 
 ---
 
@@ -579,7 +579,7 @@ A: If your program has no data races, the detector won't report anything (correc
 A: See [CONTRIBUTING.md](../CONTRIBUTING.md). We welcome bug reports, test cases, documentation improvements, and code contributions!
 
 **Q: Can I use this in my company?**
-A: Yes! BSD 3-Clause license. Production-ready for testing and development. Not recommended for production deployments.
+A: Yes! MIT License. Production-ready for testing and development. Not recommended for production deployments.
 
 **Q: Is there a roadmap?**
 A: Yes! See [ROADMAP.md](../ROADMAP.md) for development roadmap and upcoming features.
@@ -610,4 +610,4 @@ If you need help:
 ---
 
 *Last Updated: November 28, 2025*
-*Version: 0.3.0 (Advanced Performance Optimizations)*
+*Version: 0.3.1 (Advanced Performance Optimizations)*
