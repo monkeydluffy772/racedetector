@@ -21,6 +21,33 @@ If you don't have Go installed, visit [https://go.dev/dl/](https://go.dev/dl/)
 
 ---
 
+## Windows Antivirus Note
+
+**Windows Defender may flag racedetector as a false positive.** This is common for code instrumentation tools.
+
+### Why this happens
+
+Race detectors and similar tools:
+- Modify source code at build time (inserting instrumentation hooks)
+- Generate new executables from instrumented code
+- These behaviors trigger heuristic antivirus detection
+
+### Workarounds
+
+**Option 1: Add exclusion for Go bin directory**
+```
+Windows Security → Virus & threat protection → Manage settings →
+Exclusions → Add exclusion → Add folder: %USERPROFILE%\go\bin
+```
+
+**Option 2: Build from source** (see Method 2 below)
+
+**Option 3: Use WSL2** - Linux binaries don't trigger Windows Defender
+
+This is a known issue ([#7](https://github.com/kolkov/racedetector/issues/7)) and we're investigating code signing solutions.
+
+---
+
 ## Installation Methods
 
 ### Method 1: Install via `go install` (Recommended)
