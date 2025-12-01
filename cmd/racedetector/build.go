@@ -211,6 +211,10 @@ type workspace struct {
 
 	// Source directory (where instrumented .go files go)
 	srcDir string
+
+	// Original source directory (where original .go files come from)
+	// Used to find original go.mod for replace directives
+	originalSourceDir string
 }
 
 // createWorkspace creates a temporary workspace for building instrumented code.
@@ -244,7 +248,8 @@ func (w *workspace) cleanup() {
 // setupRuntimeLinking creates go.mod overlay for runtime linking.
 func (w *workspace) setupRuntimeLinking() error {
 	// Create go.mod overlay in workspace
-	overlayPath, err := runtime.ModFileOverlay(w.dir)
+	// Pass original source dir to copy replace directives from original go.mod
+	overlayPath, err := runtime.ModFileOverlay(w.dir, w.originalSourceDir)
 	if err != nil {
 		return fmt.Errorf("failed to create go.mod overlay: %w", err)
 	}
@@ -313,6 +318,14 @@ func instrumentSources(config *buildConfig, workspace *workspace) error {
 
 	if len(goFiles) == 0 {
 		return fmt.Errorf("no Go source files found")
+	}
+
+	// Store original source directory for go.mod replace directive handling
+	// Use the first source file's directory or workDir
+	if len(goFiles) > 0 {
+		workspace.originalSourceDir = filepath.Dir(goFiles[0])
+	} else {
+		workspace.originalSourceDir = config.workDir
 	}
 
 	// Instrument each file

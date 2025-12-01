@@ -9,6 +9,9 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
+
+	"golang.org/x/mod/modfile"
 )
 
 // GetRuntimePackagePath returns the import path for the race detector runtime.
@@ -110,6 +113,35 @@ func findProjectRoot() (string, error) {
 	return "", fmt.Errorf("could not find racedetector project root")
 }
 
+// findOriginalGoMod finds the go.mod file of the project being instrumented.
+//
+// This walks up from the given directory looking for go.mod file.
+// This is different from findProjectRoot which finds racedetector's root.
+//
+// Parameters:
+//   - startDir: Directory to start searching from (usually the source file's directory)
+//
+// Returns:
+//   - Path to go.mod file
+//   - Empty string if no go.mod found
+func findOriginalGoMod(startDir string) string {
+	dir := startDir
+	for {
+		modPath := filepath.Join(dir, "go.mod")
+		if _, err := os.Stat(modPath); err == nil {
+			return modPath
+		}
+
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			// Reached filesystem root
+			break
+		}
+		dir = parent
+	}
+	return ""
+}
+
 // BuildFlags returns additional flags needed for building instrumented code.
 //
 // These flags ensure the runtime library is linked correctly and
@@ -137,13 +169,18 @@ func BuildFlags() []string {
 // ensure it can import our runtime. This creates a go.mod overlay that
 // replaces the remote import with a local path.
 //
+// It also preserves replace directives from the original project's go.mod,
+// converting relative paths to absolute paths (since the temp directory
+// has a different working directory).
+//
 // Parameters:
 //   - tempDir: Temporary directory where instrumented code is being built
+//   - sourceDir: Directory of the source file being instrumented (to find original go.mod)
 //
 // Returns:
 //   - Path to overlay file (for -modfile flag)
 //   - Error if overlay creation fails
-func ModFileOverlay(tempDir string) (string, error) {
+func ModFileOverlay(tempDir, sourceDir string) (string, error) {
 	projectRoot, err := findProjectRoot()
 	if err != nil {
 		// Not in development mode - use published package
@@ -151,23 +188,120 @@ func ModFileOverlay(tempDir string) (string, error) {
 		return "", nil
 	}
 
-	// Create go.mod in temp directory that replaces remote import with local
+	// Build go.mod content
+	var content strings.Builder
+	content.WriteString("module instrumented\n\n")
+	content.WriteString("go 1.19\n\n")
+	content.WriteString("require github.com/kolkov/racedetector v0.0.0\n\n")
+	content.WriteString(fmt.Sprintf("replace github.com/kolkov/racedetector => %s\n", projectRoot))
+
+	// Find and parse original project's go.mod to copy replace directives
+	if sourceDir != "" {
+		originalGoMod := findOriginalGoMod(sourceDir)
+		if originalGoMod != "" {
+			replaceDirectives := extractReplaceDirectives(originalGoMod)
+			if replaceDirectives != "" {
+				content.WriteString("\n// Replace directives from original go.mod:\n")
+				content.WriteString(replaceDirectives)
+			}
+		}
+	}
+
+	// Create go.mod in temp directory
 	overlayPath := filepath.Join(tempDir, "go.mod.overlay")
-
-	content := fmt.Sprintf(`module instrumented
-
-go 1.19
-
-require github.com/kolkov/racedetector v0.0.0
-
-replace github.com/kolkov/racedetector => %s
-`, projectRoot)
-
-	if err := os.WriteFile(overlayPath, []byte(content), 0644); err != nil {
+	if err := os.WriteFile(overlayPath, []byte(content.String()), 0644); err != nil {
 		return "", fmt.Errorf("failed to create go.mod overlay: %w", err)
 	}
 
 	return overlayPath, nil
+}
+
+// extractReplaceDirectives reads a go.mod file and extracts replace directives,
+// converting relative paths to absolute paths.
+//
+// Parameters:
+//   - goModPath: Path to the go.mod file to parse
+//
+// Returns:
+//   - String containing replace directives with absolute paths
+func extractReplaceDirectives(goModPath string) string {
+	data, err := os.ReadFile(goModPath)
+	if err != nil {
+		return ""
+	}
+
+	modFile, err := modfile.Parse(goModPath, data, nil)
+	if err != nil {
+		return ""
+	}
+
+	if len(modFile.Replace) == 0 {
+		return ""
+	}
+
+	goModDir := filepath.Dir(goModPath)
+	var result strings.Builder
+
+	for _, rep := range modFile.Replace {
+		newPath := rep.New.Path
+
+		// Check if it's a local path (relative or already absolute)
+		// Local paths don't have a version and are filesystem paths
+		if rep.New.Version == "" && isLocalPath(newPath) {
+			// Convert relative path to absolute
+			if !filepath.IsAbs(newPath) {
+				absPath, err := filepath.Abs(filepath.Join(goModDir, newPath))
+				if err == nil {
+					newPath = absPath
+				}
+			}
+		}
+
+		// Write the replace directive
+		if rep.Old.Version != "" {
+			// Replace specific version: replace foo v1.0.0 => bar
+			if rep.New.Version != "" {
+				result.WriteString(fmt.Sprintf("replace %s %s => %s %s\n",
+					rep.Old.Path, rep.Old.Version, newPath, rep.New.Version))
+			} else {
+				result.WriteString(fmt.Sprintf("replace %s %s => %s\n",
+					rep.Old.Path, rep.Old.Version, newPath))
+			}
+		} else {
+			// Replace all versions: replace foo => bar
+			if rep.New.Version != "" {
+				result.WriteString(fmt.Sprintf("replace %s => %s %s\n",
+					rep.Old.Path, newPath, rep.New.Version))
+			} else {
+				result.WriteString(fmt.Sprintf("replace %s => %s\n",
+					rep.Old.Path, newPath))
+			}
+		}
+	}
+
+	return result.String()
+}
+
+// isLocalPath checks if a path is a local filesystem path (not a module path).
+//
+// Local paths start with ./, ../, /, or a drive letter on Windows.
+func isLocalPath(path string) bool {
+	if strings.HasPrefix(path, "./") || strings.HasPrefix(path, "../") {
+		return true
+	}
+	if filepath.IsAbs(path) {
+		return true
+	}
+	// Windows drive letter check (e.g., C:\)
+	if len(path) >= 2 && path[1] == ':' {
+		return true
+	}
+	// Check if it looks like a relative path (contains path separator but no dots)
+	// This handles cases like "subdir/module"
+	if strings.ContainsAny(path, `/\`) && !strings.Contains(path, ".") {
+		return true
+	}
+	return false
 }
 
 // InjectInitCalls injects Init/Fini calls into the main function.

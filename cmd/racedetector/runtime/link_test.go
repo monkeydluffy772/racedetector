@@ -2,6 +2,7 @@
 package runtime
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -112,8 +113,8 @@ func TestModFileOverlay(t *testing.T) {
 	}
 	defer os.RemoveAll(tempDir)
 
-	// Test overlay creation
-	overlayPath, err := ModFileOverlay(tempDir)
+	// Test overlay creation (pass empty sourceDir for basic test)
+	overlayPath, err := ModFileOverlay(tempDir, "")
 
 	// If we're not in development mode, overlay might be empty
 	if err != nil {
@@ -161,13 +162,95 @@ func TestModFileOverlay_InvalidDir(t *testing.T) {
 	// Try to create overlay in non-existent directory
 	invalidDir := "/this/path/should/not/exist/racedetector-test-12345"
 
-	_, err := ModFileOverlay(invalidDir)
+	_, err := ModFileOverlay(invalidDir, "")
 
 	// If we're in development mode, this should fail
 	// If not in development mode, it returns empty string with no error
 	// Both are acceptable
 	if err != nil {
 		t.Logf("ModFileOverlay() with invalid dir returned error (expected): %v", err)
+	}
+}
+
+// TestModFileOverlay_WithReplaceDirectives verifies replace directive handling.
+func TestModFileOverlay_WithReplaceDirectives(t *testing.T) {
+	// Create temp directories
+	tempDir, err := os.MkdirTemp("", "racedetector-overlay-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	// Create a fake source directory with go.mod containing replace directives
+	sourceDir, err := os.MkdirTemp("", "racedetector-source-*")
+	if err != nil {
+		t.Fatalf("Failed to create source dir: %v", err)
+	}
+	defer os.RemoveAll(sourceDir)
+
+	// Create a go.mod with replace directives
+	// Use platform-appropriate paths
+	var absPath string
+	if os.PathSeparator == '\\' {
+		// Windows
+		absPath = "C:\\absolute\\path\\to\\other" //nolint:misspell // "other" is not a misspelling
+	} else {
+		// Unix
+		absPath = "/absolute/path/to/other"
+	}
+
+	goModContent := fmt.Sprintf(`module example.com/test
+
+go 1.21
+
+require (
+	example.com/lib v1.0.0
+)
+
+replace example.com/lib => ../locallib
+replace example.com/other => %s
+`, absPath)
+	if err := os.WriteFile(filepath.Join(sourceDir, "go.mod"), []byte(goModContent), 0644); err != nil {
+		t.Fatalf("Failed to create go.mod: %v", err)
+	}
+
+	// Test overlay creation with source dir
+	overlayPath, err := ModFileOverlay(tempDir, sourceDir)
+	if err != nil {
+		t.Fatalf("ModFileOverlay() failed: %v", err)
+	}
+
+	if overlayPath == "" {
+		t.Skip("Not in development mode, skipping replace directive test")
+	}
+
+	// Read and verify content
+	content, err := os.ReadFile(overlayPath)
+	if err != nil {
+		t.Fatalf("Failed to read overlay: %v", err)
+	}
+
+	contentStr := string(content)
+	t.Logf("Generated overlay:\n%s", contentStr)
+
+	// Should contain comment about original replace directives
+	if !strings.Contains(contentStr, "Replace directives from original go.mod") {
+		t.Errorf("Overlay missing comment about original replace directives")
+	}
+
+	// Should contain the example.com/lib replace (path should be absolute now)
+	if !strings.Contains(contentStr, "replace example.com/lib") {
+		t.Errorf("Overlay missing example.com/lib replace directive")
+	}
+
+	// The relative path ../locallib should have been converted to absolute
+	if strings.Contains(contentStr, "../locallib") {
+		t.Errorf("Overlay still contains relative path ../locallib - should be absolute")
+	}
+
+	// The absolute path should remain as-is
+	if !strings.Contains(contentStr, absPath) {
+		t.Errorf("Overlay missing or modified absolute path for example.com/other, expected %q", absPath)
 	}
 }
 

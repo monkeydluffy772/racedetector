@@ -3,7 +3,7 @@
 > **Strategic Advantage**: Proven FastTrack algorithm implementation without CGO dependency!
 > **Approach**: Scientific algorithm + Go best practices - eliminates C++ ThreadSanitizer dependency
 
-**Last Updated**: 2025-11-28 | **Current Version**: v0.3.0 (RELEASED!) | **Strategy**: MVP → Optimization + Hardening → Advanced Optimizations → Runtime Integration → Go Proposal | **Milestone**: v0.3.0 COMPLETE! → v0.4.0 (Runtime Integration) → v1.0.0 (Q1 2026)
+**Last Updated**: 2025-12-01 | **Current Version**: v0.3.2 (RELEASED!) | **Strategy**: MVP → Optimization + Hardening → Advanced Optimizations → Runtime Integration → Go Proposal | **Milestone**: v0.3.2 COMPLETE! → v0.4.0 (Runtime Integration) → v1.0.0 (Q1 2026)
 
 ---
 
@@ -46,6 +46,8 @@ v0.2.0 (Performance + Hardening) ✅ RELEASED 2025-11-20
          ↓ (99% overhead reduction, 74× speedup, production-grade!)
 v0.3.0 (Advanced Optimizations) ✅ RELEASED 2025-11-28
          ↓ (43× faster VectorClocks, 8× memory reduction, sampling!)
+v0.3.2 (Go 1.24+ & Bug Fixes) ✅ RELEASED 2025-12-01
+         ↓ (Go 1.24+ requirement, replace directive fix)
 v0.4.0 (Go Runtime Integration) → Replace ThreadSanitizer in Go toolchain
          ↓ (1-2 months testing)
 v1.0.0 LTS → Production-ready with Go community adoption (Q1 2026)
@@ -86,6 +88,16 @@ v1.0.0 LTS → Production-ready with Go community adoption (Q1 2026)
 - **Enhanced Read-Shared**:
   - 4 inline slots for delayed VectorClock promotion
 
+**v0.3.2** = Go 1.24+ Requirement & Bug Fixes ✅ RELEASED
+- **Go 1.24+ requirement**:
+  - Benefit from Swiss Tables maps (+30% faster)
+  - Improved sync.Map with concurrent hash-trie
+  - 2-3% CPU performance improvements
+- **Replace directive bug fix (Issue #6)**:
+  - Preserve replace directives from original go.mod
+  - Convert relative paths to absolute for temp workspace
+  - New dependency: golang.org/x/mod v0.30.0
+
 **v0.4.0** = Go runtime integration (planned)
 - Replace `runtime/race/*.syso` (ThreadSanitizer binaries)
 - Integrate with Go compiler's `-race` flag
@@ -105,10 +117,10 @@ v1.0.0 LTS → Production-ready with Go community adoption (Q1 2026)
 
 ---
 
-## 📊 Current Status (v0.3.0)
+## 📊 Current Status (v0.3.2)
 
-**Phase**: ✅ Production-Ready Standalone Tool with Advanced Optimizations
-**Detector**: Production-grade! 43× faster VectorClocks! 8× memory reduction! 🚀
+**Phase**: ✅ Production-Ready Standalone Tool with Go 1.24+ Requirements
+**Detector**: Production-grade! Go 1.24+ for Swiss Tables performance! 🚀
 **AST Instrumentation**: Complete! Optimized with BigFoot coalescing! ✨
 
 **What Works**:
@@ -350,5 +362,5 @@ Previous Write at 0xc00000a0b8 by goroutine 3:
 
 ---
 
-*Version 1.2 (Updated 2025-11-28)*
-*Current: v0.3.0 (RELEASED) | Phase: Production-Ready Standalone Tool | Next: v0.4.0 (Go Runtime Integration) | Target: v1.0.0 LTS (Q1 2026)*
+*Version 1.3 (Updated 2025-12-01)*
+*Current: v0.3.2 (RELEASED) | Phase: Production-Ready Standalone Tool | Next: v0.4.0 (Go Runtime Integration) | Target: v1.0.0 LTS (Q1 2026)*

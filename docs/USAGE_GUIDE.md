@@ -285,7 +285,7 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@v4
         with:
-          go-version: '1.21'
+          go-version: '1.24'
 
       - name: Install racedetector
         run: go install github.com/kolkov/racedetector/cmd/racedetector@latest
@@ -306,7 +306,7 @@ jobs:
 ```yaml
 # .gitlab-ci.yml
 test:race-detection:
-  image: golang:1.21
+  image: golang:1.24
   stage: test
   script:
     - go install github.com/kolkov/racedetector/cmd/racedetector@latest
@@ -340,7 +340,7 @@ pipeline {
 
 ```dockerfile
 # Dockerfile
-FROM golang:1.21 AS builder
+FROM golang:1.24 AS builder
 
 # Install racedetector
 RUN go install github.com/kolkov/racedetector/cmd/racedetector@latest
@@ -523,10 +523,10 @@ A: Yes! v0.3.0 is production-ready for testing and development. Not recommended 
 ### Installation
 
 **Q: Which Go version do I need?**
-A: Go 1.21 or higher. Run `go version` to check.
+A: Go 1.24 or higher. Run `go version` to check.
 
 **Q: Can I use this with older Go versions?**
-A: No, requires Go 1.21+ for modern AST features and structured logging.
+A: No, requires Go 1.24+ for improved performance (Swiss Tables maps, optimized sync.Map) and modern AST features.
 
 **Q: Does this work on Windows?**
 A: Yes! Fully tested on Windows 10/11, Linux, and macOS.
@@ -609,5 +609,5 @@ If you need help:
 
 ---
 
-*Last Updated: November 28, 2025*
-*Version: 0.3.1 (Advanced Performance Optimizations)*
+*Last Updated: December 1, 2025*
+*Version: 0.3.2 (Go 1.24+ & Replace Directive Fix)*

@@ -7,6 +7,72 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.2] - 2025-12-01
+
+### Go 1.24+ Requirement & Replace Directive Fix
+
+This hotfix release upgrades the minimum Go version to 1.24 and fixes handling of `replace` directives in go.mod files.
+
+### Changed
+
+- **BREAKING: Minimum Go version is now 1.24** (was 1.21)
+  - Go 1.24 provides significant performance improvements (Swiss Tables maps, improved sync.Map)
+  - Better runtime performance benefits race detection workloads
+  - Users requiring Go 1.21 support can use v0.3.1
+
+### Fixed
+
+- **Issue #6: Replace directives not working** ([#6](https://github.com/kolkov/racedetector/issues/6))
+  - `replace` directives from original project's go.mod are now properly copied to instrumented code
+  - Relative paths (e.g., `../locallib`) are automatically converted to absolute paths
+  - Supports all replace directive formats (with/without version specifiers)
+
+### Added
+
+- **New dependency: golang.org/x/mod v0.30.0**
+  - Official Go module for parsing go.mod files
+  - Enables proper handling of replace directives
+- **New functions in runtime package:**
+  - `findOriginalGoMod()` - Locates project's go.mod file
+  - `extractReplaceDirectives()` - Parses and converts replace directives
+  - `isLocalPath()` - Detects local filesystem paths
+
+### Installation
+
+```bash
+go install github.com/kolkov/racedetector/cmd/racedetector@v0.3.2
+```
+
+**Note:** Requires Go 1.24 or higher.
+
+### Upgrade from v0.3.1
+
+If your project uses `replace` directives in go.mod, they will now work automatically.
+No code changes required.
+
+---
+
+## [0.3.1] - 2025-12-01
+
+### Documentation Hotfix
+
+Quick fix for documentation errors discovered after v0.3.0 release.
+
+### Fixed
+
+- **INSTALLATION.md**: Updated binary download instructions (binaries available since v0.2.0)
+- **INSTALLATION.md**: Fixed branch reference (`master` → `main`)
+- **USAGE_GUIDE.md**: Corrected `test` command status (Planned for v0.4.0, not production-ready)
+- **USAGE_GUIDE.md**: Fixed license reference (MIT License, not BSD 3-Clause)
+
+### Installation
+
+```bash
+go install github.com/kolkov/racedetector/cmd/racedetector@v0.3.1
+```
+
+---
+
 ## [0.3.0] - 2025-11-28
 
 ### Advanced Performance Optimizations Release

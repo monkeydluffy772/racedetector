@@ -2,14 +2,16 @@
 
 ## Supported Versions
 
-racedetector is currently in alpha (Path A MVP). We provide security updates for the following versions:
+racedetector is production-ready for development and testing. We provide security updates for the following versions:
 
-| Version | Supported          |
-| ------- | ------------------ |
-| 0.1.0-alpha | :white_check_mark: |
-| < 0.1.0 | :x:                |
+| Version | Supported          | Notes |
+| ------- | ------------------ | ----- |
+| 0.3.x   | :white_check_mark: | Current stable (Go 1.24+ required) |
+| 0.2.x   | :white_check_mark: | Performance optimizations |
+| 0.1.x   | :x:                | Superseded |
+| < 0.1.0 | :x:                | Development only |
 
-Future stable releases (v1.0+) will follow semantic versioning with LTS support after Path B (Runtime Integration).
+Future stable releases (v1.0+) will follow semantic versioning with LTS support after Runtime Integration phase.
 
 ## Reporting a Vulnerability
 
@@ -151,17 +153,17 @@ defer os.RemoveAll(workspace)                    // Always cleaned up
 racedetector has minimal dependencies:
 
 **Production Dependencies**:
-- None! Pure Go with only standard library
+- `golang.org/x/mod v0.30.0` - Official Go module for go.mod parsing (required for replace directive handling)
 
 **Development Dependencies**:
 - `github.com/stretchr/testify` - Testing only
-- Go toolchain (1.21+)
+- Go toolchain (1.24+)
 
 **Security Benefits**:
-- ✅ Zero external dependencies in production
+- ✅ Only one external dependency (golang.org/x/mod - official Go project)
 - ✅ No C dependencies (Pure Go, no CGO)
 - ✅ Minimal attack surface
-- ✅ No supply chain risks from third-party packages
+- ✅ golang.org/x/* packages have same security standards as Go itself
 
 **Monitoring**:
 - ✅ Dependabot enabled (when repository goes public)
@@ -235,7 +237,7 @@ Run race detection in isolated environments:
 
 ```bash
 # Use containers for untrusted code
-docker run --rm -v $(pwd):/app golang:1.21 \
+docker run --rm -v $(pwd):/app golang:1.24 \
     bash -c "cd /app && racedetector build ./..."
 ```
 
@@ -315,11 +317,12 @@ Previous read at 0x00c0000180a0 by goroutine 6:
 
 ### Current Testing
 
-- ✅ 67+ unit tests with edge cases
+- ✅ 670+ tests with edge cases (100% pass rate)
 - ✅ Integration tests with real race conditions
 - ✅ Dogfooding (tool instruments itself)
 - ✅ Linting with golangci-lint (34+ linters)
 - ✅ Zero CGO (no memory safety issues from C)
+- ✅ 86.3% test coverage
 
 ### Planned for v1.0
 
@@ -330,7 +333,7 @@ Previous read at 0x00c0000180a0 by goroutine 6:
 
 ## Security Disclosure History
 
-No security vulnerabilities have been reported or fixed yet (project is in alpha).
+No security vulnerabilities have been reported or fixed yet (project is production-ready since v0.2.0).
 
 When vulnerabilities are addressed, they will be listed here with:
 - **CVE ID** (if assigned)

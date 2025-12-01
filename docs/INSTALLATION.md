@@ -4,13 +4,13 @@ This guide provides step-by-step instructions for installing the `racedetector` 
 
 ## Prerequisites
 
-- **Go 1.21 or higher** - The tool uses modern Go features and requires Go 1.21+
+- **Go 1.24 or higher** - Starting with v0.3.2, Go 1.24+ is required for better performance
 - **Git** - For installing from source
 
 ### Verify Prerequisites
 
 ```bash
-# Check Go version (must be 1.21+)
+# Check Go version (must be 1.24+)
 go version
 
 # Check Git
@@ -37,7 +37,7 @@ racedetector --version
 
 **Expected output:**
 ```
-racedetector version 0.3.1
+racedetector version 0.3.2
 ```
 
 **Installation location:**
@@ -300,5 +300,5 @@ If you encounter issues:
 
 ---
 
-*Last Updated: November 28, 2025*
-*Version: 0.3.1*
+*Last Updated: December 1, 2025*
+*Version: 0.3.2*

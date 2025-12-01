@@ -118,7 +118,15 @@ demo.bat   # Windows
 
 ## 💎 What Makes This Production-Ready
 
-### 🚀 NEW in v0.3.0 (November 28, 2025)
+### 🚀 NEW in v0.3.2 (December 1, 2025)
+
+**Go 1.24+ required for Swiss Tables performance + Replace directive bug fix!**
+
+- **Go 1.24+ requirement**: Benefit from Swiss Tables maps (+30% faster), improved sync.Map
+- **Issue #6 fixed**: Replace directives from original go.mod now preserved
+- **New dependency**: golang.org/x/mod for proper go.mod parsing
+
+### v0.3.0 (November 28, 2025)
 
 **Advanced performance optimizations - up to 43x faster vector clocks!**
 
@@ -369,6 +377,11 @@ $ CGO_ENABLED=0 go build -race main.go  # Just works! ✅
 
 ### Roadmap to Go Integration
 
+**v0.3.2 (December 2025):** ✅ **CURRENT!**
+- Go 1.24+ requirement (Swiss Tables, improved sync.Map) ✅
+- Replace directive bug fix (Issue #6) ✅
+- golang.org/x/mod integration for proper go.mod parsing ✅
+
 **v0.3.0 (November 2025):** ✅ **COMPLETE!**
 - Sparse-aware Vector Clocks (43× faster) ✅
 - Address Compression (8× memory reduction) ✅
@@ -520,6 +533,7 @@ See [LICENSE](LICENSE) for full text.
 - **Open Source Release:** November 19, 2025 (v0.1.0)
 - **Production Release:** November 20, 2025 (v0.2.0)
 - **Performance Release:** November 28, 2025 (v0.3.0)
+- **Go 1.24+ Hotfix:** December 1, 2025 (v0.3.2)
 - **Next Milestone:** v0.4.0 (January 2026)
 - **Go Proposal:** Q2 2026
 
@@ -541,7 +555,7 @@ See [LICENSE](LICENSE) for full text.
 
 *"After successfully implementing [Pure-Go HDF5](https://github.com/scigolib/hdf5), we knew Pure-Go race detection was possible. Now we're proving it."*
 
-**Status:** v0.3.0 Released - 43× Faster VectorClocks + 8× Memory Reduction!
+**Status:** v0.3.2 Released - Go 1.24+ Required + Replace Directive Fix!
 **Community:** Let's get this into Go!
 **Goal:** Official integration by 2027
 
