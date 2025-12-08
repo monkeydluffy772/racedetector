@@ -150,7 +150,6 @@ func BenchmarkOverhead_ContextLookup(b *testing.B) {
 		b.ResetTimer()
 		b.ReportAllocs()
 
-		//nolint:revive // Empty loop intentional - measuring baseline overhead
 		for i := 0; i < b.N; i++ {
 			// Without detector, context lookup is skipped
 			// This measures baseline cost (minimal)
@@ -384,8 +383,7 @@ func benchmarkChannelOperations(b *testing.B, withDetector bool) {
 	b.ResetTimer()
 	b.ReportAllocs()
 
-	// Consumer
-	//nolint:revive // Empty loop intentional - draining channel for benchmark
+	// Consumer - draining channel for benchmark
 	for range ch {
 		// Drain channel
 	}

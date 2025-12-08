@@ -194,6 +194,11 @@ linters:
           - gosec        # Examples may have security warnings
           - gocritic     # Example patterns may differ
 
+      # internal/race/api - package name 'api' is intentional (public API)
+      - path: internal/race/api/.*\.go
+        linters:
+          - revive       # Package name 'api' triggers var-naming rule
+
 issues:
   # Show all issues
   max-issues-per-linter: 0
