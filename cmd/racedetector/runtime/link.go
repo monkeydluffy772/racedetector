@@ -74,7 +74,8 @@ func ValidateRuntimeAvailable() error {
 // findProjectRoot finds the root directory of the racedetector project.
 //
 // This walks up the directory tree from the current executable location
-// looking for go.mod or a known project file.
+// looking for our specific project marker (internal/race/api directory).
+// We don't just look for any go.mod because that would match the user's project.
 //
 // Returns:
 //   - Project root path
@@ -86,16 +87,10 @@ func findProjectRoot() (string, error) {
 		return "", err
 	}
 
-	// Walk up looking for go.mod
+	// Walk up looking for internal/race/api (our specific runtime marker)
 	dir := cwd
 	for {
-		// Check for go.mod
-		modPath := filepath.Join(dir, "go.mod")
-		if _, err := os.Stat(modPath); err == nil {
-			return dir, nil
-		}
-
-		// Check for internal/race/api (our runtime)
+		// Check for internal/race/api (our runtime - THIS IS THE KEY MARKER)
 		runtimePath := filepath.Join(dir, "internal", "race", "api")
 		if _, err := os.Stat(runtimePath); err == nil {
 			return dir, nil
@@ -108,6 +103,24 @@ func findProjectRoot() (string, error) {
 			break
 		}
 		dir = parent
+	}
+
+	// Not found by walking up - try to find via executable path
+	exePath, err := os.Executable()
+	if err == nil {
+		// Executable might be in project root or bin directory
+		exeDir := filepath.Dir(exePath)
+		candidates := []string{
+			exeDir,                             // racedetector.exe in project root
+			filepath.Dir(exeDir),               // racedetector.exe in bin/
+			filepath.Dir(filepath.Dir(exeDir)), // deeper nesting
+		}
+		for _, candidate := range candidates {
+			runtimePath := filepath.Join(candidate, "internal", "race", "api")
+			if _, err := os.Stat(runtimePath); err == nil {
+				return candidate, nil
+			}
+		}
 	}
 
 	return "", fmt.Errorf("could not find racedetector project root")

@@ -99,7 +99,11 @@ racedetector build -o myapp main.go
 # Drop-in replacement for 'go run'
 racedetector run main.go
 
-# Works with all go build flags
+# Drop-in replacement for 'go test -race' (NEW in v0.4.0!)
+racedetector test ./...
+racedetector test -v -run TestFoo ./pkg/...
+
+# Works with all go build/test flags
 racedetector build -ldflags="-s -w" -o myapp .
 ```
 
@@ -118,7 +122,18 @@ demo.bat   # Windows
 
 ## 💎 What Makes This Production-Ready
 
-### 🚀 NEW in v0.3.2 (December 1, 2025)
+### 🚀 NEW in v0.4.0 (December 2025)
+
+**`racedetector test` command - Drop-in replacement for `go test -race`!**
+
+- **`racedetector test` command**: Run tests with race detection, no CGO required
+  - All `go test` flags supported: `-v`, `-run`, `-bench`, `-cover`, `-timeout`, etc.
+  - Recursive package patterns: `./...`, `./pkg/...`
+  - Test files (`_test.go`) properly instrumented
+- **Critical bug fix**: `counter++`/`counter--` (IncDecStmt) now properly instrumented
+- **Improved project detection**: `findProjectRoot()` no longer confuses user's go.mod with racedetector's
+
+### v0.3.2 (December 1, 2025)
 
 **Go 1.24+ required for Swiss Tables performance + Replace directive bug fix!**
 

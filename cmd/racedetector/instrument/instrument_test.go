@@ -544,9 +544,113 @@ func main() {
 	t.Logf("Instrumented output:\n%s", result.Code)
 }
 
-// BenchmarkInstrumentFile benchmarks instrumentation performance.
+// TestInstrumentFile_IncDecStmt tests instrumentation of increment/decrement statements.
 //
-// Target: <1s per 1000 lines of code
+// Test Case:
+//
+//	counter++
+//	counter--
+//	i++
+//
+// Expected:
+//   - Both RaceRead and RaceWrite for each inc/dec operation
+//   - counter++ is semantically counter = counter + 1 (read + write)
+//
+// This test was added to fix a bug where IncDecStmt was not being instrumented,
+// causing race detection to miss races in code like:
+//
+//	go func() { counter++ }()
+//	go func() { counter++ }()
+func TestInstrumentFile_IncDecStmt(t *testing.T) {
+	input := `package main
+
+var counter int
+
+func main() {
+	counter++
+	counter--
+}
+`
+
+	result, err := InstrumentFile("test.go", input)
+	if err != nil {
+		t.Fatalf("InstrumentFile failed: %v", err)
+	}
+
+	// Verify imports added.
+	if !strings.Contains(result.Code, RacePackageImportPath) {
+		t.Errorf("Output missing race package import")
+	}
+
+	// Verify RaceRead and RaceWrite calls are present.
+	// counter++ should generate both a read and a write.
+	if !strings.Contains(result.Code, "race.RaceRead") {
+		t.Errorf("Output missing RaceRead for counter++")
+	}
+	if !strings.Contains(result.Code, "race.RaceWrite") {
+		t.Errorf("Output missing RaceWrite for counter++")
+	}
+
+	// Verify stats: counter++ and counter-- should each count as 1 read + 1 write.
+	// Total: 2 reads + 2 writes.
+	if result.Stats.ReadsInstrumented != 2 {
+		t.Errorf("Stats.ReadsInstrumented = %d, want 2", result.Stats.ReadsInstrumented)
+	}
+	if result.Stats.WritesInstrumented != 2 {
+		t.Errorf("Stats.WritesInstrumented = %d, want 2", result.Stats.WritesInstrumented)
+	}
+
+	t.Logf("Instrumented output:\n%s", result.Code)
+}
+
+// TestInstrumentFile_IncDecInGoroutine tests instrumentation in anonymous functions.
+//
+// This is a critical test because race conditions commonly occur in patterns like:
+//
+//	go func() { counter++ }()
+//	go func() { counter++ }()
+//
+// The instrumenter must correctly instrument code inside anonymous functions.
+func TestInstrumentFile_IncDecInGoroutine(t *testing.T) {
+	input := `package main
+
+var counter int
+
+func main() {
+	go func() {
+		counter++
+	}()
+	go func() {
+		counter++
+	}()
+}
+`
+
+	result, err := InstrumentFile("test.go", input)
+	if err != nil {
+		t.Fatalf("InstrumentFile failed: %v", err)
+	}
+
+	// Verify both goroutines have their counter++ instrumented.
+	// 2 goroutines × (1 read + 1 write) = 4 operations total.
+	if result.Stats.ReadsInstrumented != 2 {
+		t.Errorf("Stats.ReadsInstrumented = %d, want 2", result.Stats.ReadsInstrumented)
+	}
+	if result.Stats.WritesInstrumented != 2 {
+		t.Errorf("Stats.WritesInstrumented = %d, want 2", result.Stats.WritesInstrumented)
+	}
+
+	// Verify the instrumented code contains race detection calls.
+	if !strings.Contains(result.Code, "race.RaceRead") {
+		t.Errorf("Output missing RaceRead calls")
+	}
+	if !strings.Contains(result.Code, "race.RaceWrite") {
+		t.Errorf("Output missing RaceWrite calls")
+	}
+
+	t.Logf("Instrumented output:\n%s", result.Code)
+}
+
 func BenchmarkInstrumentFile(b *testing.B) {
 	input := `package main
 

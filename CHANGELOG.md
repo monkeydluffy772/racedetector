@@ -7,6 +7,52 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0] - 2025-12-09
+
+### `racedetector test` Command Release
+
+This release introduces the `test` command - a drop-in replacement for `go test -race` that works with `CGO_ENABLED=0`.
+
+### Added
+
+- **`racedetector test` command** - Run tests with race detection without CGO
+  - All `go test` flags supported: `-v`, `-run`, `-bench`, `-cover`, `-coverprofile`, `-timeout`, `-count`, `-parallel`, `-tags`, `-ldflags`, etc.
+  - Recursive package patterns: `./...`, `./pkg/...`, `./internal/...`
+  - Test files (`_test.go`) properly instrumented alongside source files
+  - Works exactly like `go test -race` but without CGO requirement
+
+### Fixed
+
+- **Critical: IncDecStmt instrumentation** - `counter++` and `counter--` operations now properly instrumented
+  - Both READ and WRITE operations are detected for increment/decrement
+  - Code inside anonymous functions (`go func() {...}()`) now instrumented correctly
+  - This fix enables detection of races that were previously missed
+
+- **findProjectRoot() improvement** - No longer confuses user's go.mod with racedetector's
+  - Uses `internal/race/api` directory marker for accurate detection
+  - Added executable path fallback for installed binaries
+  - Fixes "module does not contain package" errors
+
+### Usage
+
+```bash
+# Basic usage
+racedetector test ./...
+
+# With flags
+racedetector test -v -run TestFoo ./pkg/...
+racedetector test -cover -coverprofile=coverage.out ./...
+racedetector test -bench . -benchmem ./...
+```
+
+### Installation
+
+```bash
+go install github.com/kolkov/racedetector/cmd/racedetector@v0.4.0
+```
+
+---
+
 ## [0.3.2] - 2025-12-01
 
 ### Go 1.24+ Requirement & Replace Directive Fix

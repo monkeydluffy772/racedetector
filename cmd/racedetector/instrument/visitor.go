@@ -164,6 +164,12 @@ func (v *instrumentVisitor) Visit(node ast.Node) ast.Visitor {
 		// These are WRITE operations on the left-hand side.
 		v.visitAssignment(n)
 
+	case *ast.IncDecStmt:
+		// Increment/decrement: i++, i--, counter++, counter--
+		// These are both READ and WRITE operations on the same variable.
+		// Example: counter++ is equivalent to counter = counter + 1
+		v.visitIncDec(n)
+
 	case *ast.UnaryExpr:
 		// Dereference: *ptr
 		// Can be either read or write depending on context.
@@ -252,6 +258,59 @@ func (v *instrumentVisitor) visitAssignment(stmt *ast.AssignStmt) {
 			Node:       stmt,
 			AccessType: AccessWrite,
 			Addr:       addr,
+		})
+		v.stats.WritesInstrumented++
+	}
+}
+
+// visitIncDec handles increment/decrement statements: i++, i--, counter++, counter--.
+//
+// These statements are both a READ and WRITE of the same location.
+// Example: counter++ is semantically equivalent to counter = counter + 1
+//
+// Algorithm:
+//  1. Extract the address of the operand
+//  2. Record a READ instrumentation point (for the read part)
+//  3. Record a WRITE instrumentation point (for the write part)
+//
+// Examples:
+//
+//	i++           → RaceRead(&i), RaceWrite(&i)
+//	counter--     → RaceRead(&counter), RaceWrite(&counter)
+//	*ptr++        → RaceRead(ptr), RaceWrite(ptr)
+//	arr[0]++      → RaceRead(&arr[0]), RaceWrite(&arr[0])
+//
+// Parameters:
+//   - stmt: IncDecStmt node
+func (v *instrumentVisitor) visitIncDec(stmt *ast.IncDecStmt) {
+	// Skip if this expression shouldn't be instrumented
+	if !shouldInstrument(stmt.X) {
+		v.trackSkipped(stmt.X)
+		return
+	}
+
+	// Extract address of the operand
+	addr := v.extractAddress(stmt.X)
+	if addr == nil {
+		return
+	}
+
+	// Record READ (the value is read before increment/decrement)
+	v.instrumentationPoints = append(v.instrumentationPoints, InstrumentPoint{
+		Node:       stmt,
+		AccessType: AccessRead,
+		Addr:       addr,
+	})
+	v.stats.ReadsInstrumented++
+
+	// Record WRITE (the new value is written back)
+	// Use a fresh address expression to avoid AST sharing issues
+	addrWrite := v.extractAddress(stmt.X)
+	if addrWrite != nil {
+		v.instrumentationPoints = append(v.instrumentationPoints, InstrumentPoint{
+			Node:       stmt,
+			AccessType: AccessWrite,
+			Addr:       addrWrite,
 		})
 		v.stats.WritesInstrumented++
 	}

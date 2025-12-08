@@ -21,6 +21,7 @@
 // The assembly optimization (goid_amd64.go) is disabled via build tag and will be
 // re-enabled in v0.4.0 after thorough testing.
 
+//nolint:revive // Package name 'api' is intentional - this is the public API package
 package api
 
 import "runtime"

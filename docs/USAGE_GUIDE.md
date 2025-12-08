@@ -8,7 +8,7 @@ Complete guide to using the `racedetector` tool for detecting data races in Go p
 - [Command Reference](#command-reference)
   - [build Command](#build-command)
   - [run Command](#run-command)
-  - [test Command](#test-command) (future)
+  - [test Command](#test-command) (NEW in v0.4.0)
 - [Integration with CI/CD](#integration-with-cicd)
 - [Best Practices](#best-practices)
 - [Sampling Mode (NEW in v0.3.0)](#sampling-mode-new-in-v030)
@@ -231,35 +231,105 @@ Temporary binary is automatically deleted after execution (even on Ctrl+C).
 
 ### `test` Command
 
-Run Go tests with race detection.
+Run Go tests with automatic race detection instrumentation.
 
 **Syntax:**
 ```bash
 racedetector test [go-test-flags] [packages]
 ```
 
+**Description:**
+Drop-in replacement for `go test -race` that:
+1. Instruments all source files AND test files
+2. Injects race detector imports
+3. Instruments all memory accesses including in anonymous functions
+4. Runs `go test` with instrumented code
+5. Reports races detected during test execution
+
 **Examples:**
+
 ```bash
 # Test current package
 racedetector test
 
 # Test with verbose output
-racedetector test -v
+racedetector test -v ./...
 
-# Test all packages
+# Test all packages recursively
 racedetector test ./...
 
+# Test specific subpackages
+racedetector test ./internal/...
+
 # Test with coverage
-racedetector test -cover ./internal/...
+racedetector test -cover -coverprofile=coverage.out ./...
 
 # Test specific function
-racedetector test -run=TestMyFunction
+racedetector test -run=TestMyFunction ./pkg/...
 
-# Benchmark tests
-racedetector test -bench=. -benchmem
+# Benchmark tests with race detection
+racedetector test -bench=. -benchmem ./...
+
+# Test with timeout
+racedetector test -timeout=30s ./...
+
+# Test with count (run N times)
+racedetector test -count=10 -v ./...
 ```
 
-**Status:** Planned for v0.4.0
+**Supported Flags:**
+
+All standard `go test` flags are supported:
+
+| Flag | Description |
+|------|-------------|
+| `-v` | Verbose output |
+| `-run=<regex>` | Run only tests matching regex |
+| `-bench=<regex>` | Run only benchmarks matching regex |
+| `-benchmem` | Print memory allocation statistics |
+| `-cover` | Enable coverage analysis |
+| `-coverprofile=<file>` | Write coverage profile |
+| `-count=<n>` | Run tests N times |
+| `-timeout=<duration>` | Timeout for each test |
+| `-parallel=<n>` | Maximum test parallelism |
+| `-cpu=<list>` | List of GOMAXPROCS values |
+| `-trace=<file>` | Write trace to file |
+
+**Output:**
+
+```
+=== RUN   TestRace
+==================
+WARNING: DATA RACE
+Write at 0x00007ff6d3b71268 by goroutine 3:
+  ...
+Previous Write at 0x00007ff6d3b71268 by goroutine 2:
+  ...
+==================
+    main_test.go:24: counter = 2
+--- PASS: TestRace (0.10s)
+PASS
+ok      mypackage       0.269s
+```
+
+**Flow:**
+1. Parse test flags and package patterns
+2. Create temporary workspace
+3. Instrument all `.go` files (including `_test.go`)
+4. Setup runtime linking (go.mod overlay)
+5. Run `go test` with instrumented code
+6. Forward test output and exit code
+7. Cleanup temporary files
+
+**Production Status:**
+- ✅ All go test flags supported
+- ✅ Recursive package patterns (./...)
+- ✅ Coverage and benchmark flags
+- ✅ Race detection in test code
+- ✅ Increment/decrement operations instrumented
+- ✅ Anonymous function code instrumented
+
+**NEW in v0.4.0**
 
 ---
 
@@ -609,5 +679,5 @@ If you need help:
 
 ---
 
-*Last Updated: December 1, 2025*
-*Version: 0.3.2 (Go 1.24+ & Replace Directive Fix)*
+*Last Updated: December 8, 2025*
+*Version: 0.4.0-dev (test command + IncDecStmt fix)*
