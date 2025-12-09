@@ -180,7 +180,8 @@ func BuildFlags() []string {
 //
 // When instrumenting code outside the racedetector project, we need to
 // ensure it can import our runtime. This creates a go.mod overlay that
-// replaces the remote import with a local path.
+// either replaces the remote import with a local path (development mode)
+// or requires the published package (CI/published mode).
 //
 // It also preserves replace directives from the original project's go.mod,
 // converting relative paths to absolute paths (since the temp directory
@@ -194,19 +195,21 @@ func BuildFlags() []string {
 //   - Path to overlay file (for -modfile flag)
 //   - Error if overlay creation fails
 func ModFileOverlay(tempDir, sourceDir string) (string, error) {
-	projectRoot, err := findProjectRoot()
-	if err != nil {
-		// Not in development mode - use published package
-		//nolint:nilerr // Error indicates published mode, not a failure
-		return "", nil
-	}
-
 	// Build go.mod content
 	var content strings.Builder
 	content.WriteString("module instrumented\n\n")
-	content.WriteString("go 1.19\n\n")
-	content.WriteString("require github.com/kolkov/racedetector v0.0.0\n\n")
-	content.WriteString(fmt.Sprintf("replace github.com/kolkov/racedetector => %s\n", projectRoot))
+	content.WriteString("go 1.24\n\n")
+
+	// Check if we're in development mode (running from source)
+	projectRoot, err := findProjectRoot()
+	if err == nil {
+		// Development mode - use local replace directive
+		content.WriteString("require github.com/kolkov/racedetector v0.0.0\n\n")
+		content.WriteString(fmt.Sprintf("replace github.com/kolkov/racedetector => %s\n", projectRoot))
+	} else {
+		// Published mode (CI, installed via go install) - require published package
+		content.WriteString("require github.com/kolkov/racedetector v0.4.1\n")
+	}
 
 	// Find and parse original project's go.mod to copy replace directives
 	if sourceDir != "" {

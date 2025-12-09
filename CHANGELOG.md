@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.1] - 2025-12-10
+
+### Hotfix: CI Environment Support
+
+This hotfix resolves `racedetector test` failures in GitHub Actions and other CI environments.
+
+### Fixed
+
+- **Issue #8: `racedetector test` fails in CI** ([#8](https://github.com/kolkov/racedetector/issues/8))
+  - Root cause: `ModFileOverlay()` returned empty string in "published mode" (when installed via `go install`)
+  - Fix: Now always creates `go.mod` in workspace, using published package version in CI
+  - Error: `directory prefix . does not contain main module` is now resolved
+
+### Installation
+
+```bash
+go install github.com/kolkov/racedetector/cmd/racedetector@v0.4.1
+```
+
+---
+
 ## [0.4.0] - 2025-12-09
 
 ### `racedetector test` Command Release
