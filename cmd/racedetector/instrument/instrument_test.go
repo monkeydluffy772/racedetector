@@ -750,6 +750,64 @@ func main() {
 	t.Logf("Instrumented output:\n%s", result.Code)
 }
 
+// TestInstrumentFile_PackageFunction tests that package function calls are not instrumented.
+// Issue #9: Cannot take address of os.ReadFile, strconv.Atoi, etc.
+func TestInstrumentFile_PackageFunction(t *testing.T) {
+	input := `package main
+
+import (
+	"os"
+	"strconv"
+)
+
+func main() {
+	data, _ := os.ReadFile("test.txt")
+	n, _ := strconv.Atoi("42")
+	_ = data
+	_ = n
+}
+`
+	result, err := InstrumentFile("test.go", input)
+	if err != nil {
+		t.Fatalf("InstrumentFile failed: %v", err)
+	}
+
+	// The instrumented code should not try to take address of package functions.
+	if strings.Contains(result.Code, "&os.ReadFile") {
+		t.Errorf("Output contains invalid &os.ReadFile - should not take address of package function")
+	}
+	if strings.Contains(result.Code, "&strconv.Atoi") {
+		t.Errorf("Output contains invalid &strconv.Atoi - should not take address of package function")
+	}
+
+	t.Logf("Instrumented output:\n%s", result.Code)
+}
+
+// TestInstrumentFile_MapIndex tests that map index expressions are not instrumented.
+// Issue #9: Cannot take address of map[key].
+func TestInstrumentFile_MapIndex(t *testing.T) {
+	input := `package main
+
+func main() {
+	m := map[string]int{"a": 1, "b": 2}
+	v := m["a"]
+	_ = v
+}
+`
+	result, err := InstrumentFile("test.go", input)
+	if err != nil {
+		t.Fatalf("InstrumentFile failed: %v", err)
+	}
+
+	// The instrumented code should not try to take address of map index.
+	// Note: &m["a"] is invalid in Go - cannot take address of map element
+	if strings.Contains(result.Code, `&m["a"]`) || strings.Contains(result.Code, `&m[`) {
+		t.Errorf("Output contains invalid &m[...] - should not take address of map index")
+	}
+
+	t.Logf("Instrumented output:\n%s", result.Code)
+}
+
 func BenchmarkInstrumentFile(b *testing.B) {
 	input := `package main
 

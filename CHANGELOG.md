@@ -7,6 +7,45 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.3] - 2025-12-10
+
+### Hotfix: Package Functions & Map Index Support
+
+This hotfix resolves remaining instrumentation errors with package function calls and map index expressions.
+
+### Fixed
+
+- **Package function calls** (`os.ReadFile`, `strconv.Atoi`, `filepath.Join`, etc.)
+  - Added `isLikelyPackageName()` heuristic to detect standard library packages
+  - SelectorExpr now properly filtered when X is a package identifier
+
+- **Map index expressions** (`map[key]`)
+  - Cannot take address of map element in Go
+  - All IndexExpr now skipped (conservative approach without type info)
+  - This may miss some slice/array race conditions, but avoids compilation errors
+
+### Changed
+
+- **`shouldInstrument()`** now handles additional expression types:
+  - `*ast.SelectorExpr` - skip package.Function patterns
+  - `*ast.IndexExpr` - skip all index expressions (maps not addressable)
+
+- **New function `isLikelyPackageName()`** - heuristic for common stdlib packages
+
+### Limitations
+
+- IndexExpr on slices/arrays is now skipped (false negatives possible)
+- Custom package names not in stdlib list may still cause issues
+- Full type-checking would be needed for 100% accuracy
+
+### Installation
+
+```bash
+go install github.com/kolkov/racedetector/cmd/racedetector@v0.4.3
+```
+
+---
+
 ## [0.4.2] - 2025-12-10
 
 ### Hotfix: Function References & Built-in Support

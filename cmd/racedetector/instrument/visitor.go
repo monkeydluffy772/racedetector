@@ -539,12 +539,66 @@ func shouldInstrument(expr ast.Expr) bool {
 		}
 	}
 
+	// Skip SelectorExpr that are package function calls (os.ReadFile, strconv.Atoi)
+	// We cannot take address of package-level functions
+	if sel, ok := expr.(*ast.SelectorExpr); ok {
+		// Check if X is a package identifier
+		if xIdent, ok := sel.X.(*ast.Ident); ok {
+			// If X has Obj and is a package, this is a package.Function call
+			if xIdent.Obj != nil && xIdent.Obj.Kind == ast.Pkg {
+				return false
+			}
+			// If X is an imported package name (common pattern: os, fmt, strconv, etc.)
+			// These don't have Obj set when parsed without type info
+			if isLikelyPackageName(xIdent.Name) {
+				return false
+			}
+		}
+	}
+
+	// Skip IndexExpr on maps - cannot take address of map element
+	// Without type info, we cannot distinguish map[key] from slice[i]
+	// Conservative approach: skip all IndexExpr to avoid "cannot take address of" errors
+	// This may miss some race conditions on slice/array elements, but it's safer
+	if _, ok := expr.(*ast.IndexExpr); ok {
+		// TODO: With type info, we could distinguish maps from slices/arrays
+		// For now, skip all to avoid compilation errors
+		return false
+	}
+
 	// Skip literals
 	if isLiteral(expr) {
 		return false
 	}
 
 	return true
+}
+
+// isLikelyPackageName checks if an identifier looks like a standard library package name.
+// This is a heuristic for when AST doesn't have Obj info (parsed without type checking).
+func isLikelyPackageName(name string) bool {
+	// Common standard library packages
+	stdPackages := map[string]bool{
+		"fmt": true, "os": true, "io": true, "bufio": true,
+		"strings": true, "strconv": true, "bytes": true,
+		"path": true, "filepath": true,
+		"time": true, "math": true, "rand": true,
+		"sort": true, "sync": true, "atomic": true,
+		"context": true, "errors": true,
+		"encoding": true, "json": true, "xml": true,
+		"net": true, "http": true, "url": true,
+		"reflect": true, "unsafe": true, "runtime": true,
+		"testing": true, "log": true, "flag": true,
+		"regexp": true, "unicode": true,
+		"crypto": true, "hash": true,
+		"database": true, "sql": true,
+		"html": true, "template": true,
+		"image": true, "color": true,
+		"archive": true, "compress": true,
+		"debug": true, "go": true,
+		"syscall": true, "os/exec": true,
+	}
+	return stdPackages[name]
 }
 
 // trackSkipped tracks why an expression was skipped (for statistics).
