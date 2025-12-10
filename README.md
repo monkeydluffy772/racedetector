@@ -90,6 +90,8 @@ Previous Write at 0xc00000a0b8 by goroutine 3:
 go install github.com/kolkov/racedetector/cmd/racedetector@latest
 ```
 
+> **Note for Windows users:** Windows Defender may flag racedetector as a false positive. This is common for code instrumentation tools. See [INSTALLATION.md](docs/INSTALLATION.md#windows-antivirus-note) for solutions.
+
 ### Usage
 
 ```bash
