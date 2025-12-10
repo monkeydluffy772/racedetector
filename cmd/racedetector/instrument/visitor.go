@@ -403,12 +403,62 @@ func (v *instrumentVisitor) extractReads(expr ast.Expr, stmt ast.Stmt) {
 }
 
 // isBuiltinIdent returns true if the identifier is a built-in (no instrumentation needed).
+//
+// This includes:
+//   - Built-in constants: nil, true, false, iota
+//   - Built-in functions: make, new, len, cap, append, copy, delete, close, panic, recover, etc.
+//   - Built-in types: int, string, byte, error, etc.
+//
+// You cannot take the address of built-in functions or types, so they must be excluded.
 func isBuiltinIdent(name string) bool {
 	builtins := map[string]bool{
+		// Built-in constants
 		"nil":   true,
 		"true":  true,
 		"false": true,
 		"iota":  true,
+		// Built-in functions (cannot take address)
+		"make":    true,
+		"new":     true,
+		"len":     true,
+		"cap":     true,
+		"append":  true,
+		"copy":    true,
+		"delete":  true,
+		"close":   true,
+		"panic":   true,
+		"recover": true,
+		"print":   true,
+		"println": true,
+		"complex": true,
+		"real":    true,
+		"imag":    true,
+		"clear":   true,
+		"min":     true,
+		"max":     true,
+		// Built-in types (cannot take address)
+		"bool":       true,
+		"byte":       true,
+		"complex64":  true,
+		"complex128": true,
+		"error":      true,
+		"float32":    true,
+		"float64":    true,
+		"int":        true,
+		"int8":       true,
+		"int16":      true,
+		"int32":      true,
+		"int64":      true,
+		"rune":       true,
+		"string":     true,
+		"uint":       true,
+		"uint8":      true,
+		"uint16":     true,
+		"uint32":     true,
+		"uint64":     true,
+		"uintptr":    true,
+		"any":        true,
+		"comparable": true,
 	}
 	return builtins[name]
 }
@@ -418,6 +468,11 @@ func isBuiltinIdent(name string) bool {
 // This function filters out expressions that don't need race detection:
 //   - Constants (const X = 42) - values never change at runtime
 //   - Built-in identifiers (nil, true, false, iota) - language-level constants
+//   - Built-in functions (make, new, len, etc.) - cannot take address
+//   - Built-in types (int, string, byte, etc.) - cannot take address
+//   - Function identifiers (func foo()) - cannot take address of function value
+//   - Package identifiers (os, fmt) - cannot take address of package
+//   - Type identifiers (type MyType) - cannot take address of type
 //   - Literals (42, "hello", 3.14) - compile-time values
 //   - Blank identifier (_) - special identifier for discarding values
 //
@@ -425,6 +480,7 @@ func isBuiltinIdent(name string) bool {
 // Race conditions occur when multiple goroutines access the SAME memory
 // location and at least one access is a write. Constants and literals don't
 // occupy mutable memory, so they cannot participate in data races.
+// Functions, types, and packages are not addressable in Go.
 //
 // Example:
 //
@@ -432,6 +488,9 @@ func isBuiltinIdent(name string) bool {
 //	y := X + 1         // X read is safe (constant), y write needs instrumentation
 //	z := 42            // 42 is literal, skip instrumentation
 //	_ = z              // Blank identifier, skip instrumentation
+//	f := parseSpec     // Function reference, skip (cannot take address)
+//	s := make([]int, 10) // Built-in make, skip
+//	str := string(data)  // Type conversion, skip
 //
 // Performance Impact:
 // Reduces instrumentation overhead by eliminating unnecessary race calls
@@ -450,15 +509,33 @@ func shouldInstrument(expr ast.Expr) bool {
 		return false
 	}
 
-	// Skip built-in identifiers and blank identifier
+	// Skip built-in identifiers, functions, types, packages, and blank identifier
 	if ident, ok := expr.(*ast.Ident); ok {
 		// Blank identifier _ (used to discard values)
 		if ident.Name == "_" {
 			return false
 		}
-		// Built-in identifiers (nil, true, false, iota)
+		// Built-in identifiers, functions, and types
 		if isBuiltinIdent(ident.Name) {
 			return false
+		}
+		// Check AST object kind if available
+		// This catches user-defined functions, types, and package imports
+		if ident.Obj != nil {
+			switch ident.Obj.Kind {
+			case ast.Fun:
+				// Function identifier (e.g., parseSpec in "f := parseSpec")
+				// Cannot take address of function value
+				return false
+			case ast.Typ:
+				// Type identifier (e.g., MyType in "type MyType struct{}")
+				// Cannot take address of type
+				return false
+			case ast.Pkg:
+				// Package identifier (e.g., os in "os.ReadFile")
+				// Cannot take address of package
+				return false
+			}
 		}
 	}
 

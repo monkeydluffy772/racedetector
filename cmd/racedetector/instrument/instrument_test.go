@@ -651,6 +651,105 @@ func main() {
 	t.Logf("Instrumented output:\n%s", result.Code)
 }
 
+// TestInstrumentFile_FunctionReference tests that function references are not instrumented.
+// Issue #9: Cannot take address of function value.
+func TestInstrumentFile_FunctionReference(t *testing.T) {
+	input := `package main
+
+func parseSpec() {}
+
+func main() {
+	f := parseSpec
+	_ = f
+}
+`
+	result, err := InstrumentFile("test.go", input)
+	if err != nil {
+		t.Fatalf("InstrumentFile failed: %v", err)
+	}
+
+	// The instrumented code should compile without errors.
+	// We verify by checking it doesn't contain &parseSpec (which would be invalid).
+	if strings.Contains(result.Code, "&parseSpec") {
+		t.Errorf("Output contains invalid &parseSpec - should not take address of function")
+	}
+
+	t.Logf("Instrumented output:\n%s", result.Code)
+}
+
+// TestInstrumentFile_BuiltinMake tests that built-in make is not instrumented.
+// Issue #9: make (built-in) must be called.
+func TestInstrumentFile_BuiltinMake(t *testing.T) {
+	input := `package main
+
+func main() {
+	s := make([]int, 10)
+	_ = s
+}
+`
+	result, err := InstrumentFile("test.go", input)
+	if err != nil {
+		t.Fatalf("InstrumentFile failed: %v", err)
+	}
+
+	// The instrumented code should not try to take address of make.
+	if strings.Contains(result.Code, "&make") {
+		t.Errorf("Output contains invalid &make - should not take address of built-in")
+	}
+
+	t.Logf("Instrumented output:\n%s", result.Code)
+}
+
+// TestInstrumentFile_TypeConversion tests that type conversions are not instrumented.
+// Issue #9: string (type) is not an expression.
+func TestInstrumentFile_TypeConversion(t *testing.T) {
+	input := `package main
+
+func main() {
+	data := []byte("hello")
+	s := string(data)
+	_ = s
+}
+`
+	result, err := InstrumentFile("test.go", input)
+	if err != nil {
+		t.Fatalf("InstrumentFile failed: %v", err)
+	}
+
+	// The instrumented code should not try to take address of string type.
+	if strings.Contains(result.Code, "&string") {
+		t.Errorf("Output contains invalid &string - should not take address of type")
+	}
+	if strings.Contains(result.Code, "&byte") {
+		t.Errorf("Output contains invalid &byte - should not take address of type")
+	}
+
+	t.Logf("Instrumented output:\n%s", result.Code)
+}
+
+// TestInstrumentFile_BuiltinLen tests that built-in len is not instrumented.
+func TestInstrumentFile_BuiltinLen(t *testing.T) {
+	input := `package main
+
+func main() {
+	s := []int{1, 2, 3}
+	n := len(s)
+	_ = n
+}
+`
+	result, err := InstrumentFile("test.go", input)
+	if err != nil {
+		t.Fatalf("InstrumentFile failed: %v", err)
+	}
+
+	// The instrumented code should not try to take address of len.
+	if strings.Contains(result.Code, "&len") {
+		t.Errorf("Output contains invalid &len - should not take address of built-in")
+	}
+
+	t.Logf("Instrumented output:\n%s", result.Code)
+}
+
 func BenchmarkInstrumentFile(b *testing.B) {
 	input := `package main
 

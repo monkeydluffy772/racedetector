@@ -7,6 +7,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.2] - 2025-12-10
+
+### Hotfix: Function References & Built-in Support
+
+This hotfix resolves instrumentation errors when code contains function references, built-in functions, or type conversions.
+
+### Fixed
+
+- **Issue #9: Instrumentation breaks function references** ([#9](https://github.com/kolkov/racedetector/issues/9))
+  - Root cause: `shouldInstrument()` didn't filter functions, types, packages, or built-ins
+  - Fix: Added comprehensive filtering for all non-addressable expressions
+  - Errors fixed:
+    - `cannot take address of <function> (value of type func(...))`
+    - `make (built-in) must be called`
+    - `string (type) is not an expression`
+
+### Changed
+
+- **`isBuiltinIdent()`** now includes all Go built-in functions and types:
+  - Built-in functions: `make`, `new`, `len`, `cap`, `append`, `copy`, `delete`, `close`, `panic`, `recover`, `print`, `println`, `complex`, `real`, `imag`, `clear`, `min`, `max`
+  - Built-in types: `int`, `int8-64`, `uint`, `uint8-64`, `float32`, `float64`, `complex64`, `complex128`, `bool`, `byte`, `rune`, `string`, `error`, `any`, `comparable`, `uintptr`
+
+- **`shouldInstrument()`** now checks `ast.Obj.Kind` to skip:
+  - `ast.Fun` - function identifiers
+  - `ast.Typ` - type identifiers
+  - `ast.Pkg` - package identifiers
+
+### Installation
+
+```bash
+go install github.com/kolkov/racedetector/cmd/racedetector@v0.4.2
+```
+
+---
+
 ## [0.4.1] - 2025-12-10
 
 ### Hotfix: CI Environment Support
