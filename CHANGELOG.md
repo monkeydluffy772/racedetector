@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.8] - 2025-12-10
+
+### Hotfix: Copy go.mod to instrumented sources
+
+This hotfix ensures the instrumented source directory is a valid Go module.
+
+### Fixed
+
+- **go mod tidy fails: "reading src/go.mod: no such file or directory"**
+  - The `replace MODULE => ./src` directive requires `./src` to be a valid module
+  - Now copying original go.mod to workspace/src/ directory
+  - This allows `go mod tidy` to resolve the replace directive correctly
+
+### Changed
+
+- **`instrumentTestSources()`** now copies go.mod to srcDir before go.sum
+
+### Installation
+
+```bash
+go install github.com/kolkov/racedetector/cmd/racedetector@v0.4.8
+```
+
+---
+
 ## [0.4.7] - 2025-12-10
 
 ### Feature: Internal Module Import Resolution

@@ -247,6 +247,17 @@ func instrumentTestSources(config *testConfig, workspace *workspace) error {
 		}
 	}
 
+	// Copy go.mod to srcDir (required for replace directive to work)
+	// The replace directive points to ./src, which must be a valid module
+	goModSrc := filepath.Join(config.workDir, "go.mod")
+	if _, err := os.Stat(goModSrc); err == nil {
+		goModDst := filepath.Join(workspace.srcDir, "go.mod")
+		data, err := os.ReadFile(goModSrc)
+		if err == nil {
+			_ = os.WriteFile(goModDst, data, 0644)
+		}
+	}
+
 	// Also copy go.sum if exists
 	goSumSrc := filepath.Join(config.workDir, "go.sum")
 	if _, err := os.Stat(goSumSrc); err == nil {
