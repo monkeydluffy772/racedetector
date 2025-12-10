@@ -26,6 +26,10 @@ jobs:
 
       - name: Run tests
         shell: bash
+        # GOMAXPROCS=1 prevents test flakiness for race detection tests.
+        # Same workaround as official Go race detector tests (golang/go#14119).
+        env:
+          GOMAXPROCS: 1
         run: |
           go test ./internal/... ./cmd/... ./race/...
 
