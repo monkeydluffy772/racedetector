@@ -7,7 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### v0.5.0 - Assembly-Optimized Goroutine ID (In Development)
+---
+
+## [0.5.1] - 2025-12-10
+
+### Fixed
+
+- **Version-specific goid offsets**: The `goid` field offset in Go's runtime `g` struct
+  differs between Go versions due to `gobuf` struct changes:
+  - Go 1.23: `gobuf` = 56 bytes → `goid` at offset **160**
+  - Go 1.24/1.25: `gobuf` = 48 bytes → `goid` at offset **152**
+- Replaced single `goid_fast.go` with version-specific files:
+  - `goid_go123.go` - offset 160 for Go 1.23
+  - `goid_go124.go` - offset 152 for Go 1.24
+  - `goid_go125.go` - offset 152 for Go 1.25
+- Fixes v0.5.0 release test failure on Go 1.23
+
+---
+
+## [0.5.0] - 2025-12-10
 
 **Performance Breakthrough: ~2200x Faster Goroutine ID Extraction!**
 
@@ -23,9 +41,9 @@ eliminating the runtime.Stack parsing overhead on supported platforms.
 - **goid_arm64.s**: Native assembly for ARM64 using dedicated g register
   - `MOVD g, R0` to read g pointer from R28 register
   - Zero allocations, ~2 ns/op
-- **goid_fast.go**: Go wrapper with offset logic
-  - Reads goid at offset 152 bytes from g struct pointer
-  - Verified for Go 1.23, 1.24, and 1.25
+- **goid_go123.go / goid_go124.go / goid_go125.go**: Version-specific Go wrappers
+  - Reads goid at correct offset for each Go version
+  - Go 1.23: offset 160, Go 1.24/1.25: offset 152
   - Automatic fallback to runtime.Stack on nil g pointer
 - **goid_fallback.go**: Fallback for unsupported platforms
   - Used on Go <1.23, Go >=1.26, or non-amd64/arm64 architectures
@@ -43,28 +61,18 @@ eliminating the runtime.Stack parsing overhead on supported platforms.
 
 **Build Constraints:**
 ```go
-//go:build go1.23 && !go1.26 && (amd64 || arm64)
+//go:build go1.23 && !go1.24 && (amd64 || arm64)  // for Go 1.23
+//go:build go1.24 && !go1.25 && (amd64 || arm64)  // for Go 1.24
+//go:build go1.25 && !go1.26 && (amd64 || arm64)  // for Go 1.25
 ```
 
-**g struct goid offset calculation (Go 1.23-1.25):**
+**g struct goid offset calculation:**
 ```
-Field          Size    Cumulative Offset
------          ----    -----------------
-stack          16      0
-stackguard0    8       16
-stackguard1    8       24
-_panic         8       32
-_defer         8       40
-m              8       48
-sched (gobuf)  48      56
-syscallsp      8       104
-syscallpc      8       112
-syscallbp      8       120
-stktopsp       8       128
-param          8       136
-atomicstatus   4       144
-stackLock      4       148
-goid           8       152  <- TARGET
+Go 1.24/1.25 (gobuf=48 bytes):
+  goid at offset 152
+
+Go 1.23 (gobuf=56 bytes):
+  goid at offset 160
 ```
 
 ### Changed
@@ -73,7 +81,7 @@ goid           8       152  <- TARGET
   - `getGoroutineID()` - main entry point
   - `getGoroutineIDSlow()` - runtime.Stack fallback
   - `parseGID()` - optimized byte parsing (no regex, no allocations)
-- **.golangci.yml**: Added exclusion for govet unsafeptr check on goid_fast.go
+- **.golangci.yml**: Added exclusion for govet unsafeptr check on goid files
 - **scripts/pre-release-check.sh**: Added `-unsafeptr=false` flag for go vet
 
 ### Removed
@@ -91,8 +99,7 @@ Strategic decision: **Zero external dependencies for Go runtime proposal!**
 ### Installation
 
 ```bash
-# Will be available after release:
-go install github.com/kolkov/racedetector/cmd/racedetector@v0.5.0
+go install github.com/kolkov/racedetector/cmd/racedetector@v0.5.1
 ```
 
 ---
