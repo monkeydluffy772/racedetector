@@ -6,8 +6,8 @@
 
 // Go 1.25 specific goid extraction.
 //
-// In Go 1.25, the gobuf struct is 48 bytes (6 pointers), placing goid at offset 152.
-// Same layout as Go 1.24.
+// In Go 1.25, the gobuf struct is 48 bytes (6 pointers) - 'ret' field was REMOVED.
+// This places goid at offset 152 (8 bytes earlier than Go 1.23/1.24).
 //
 // g struct layout (Go 1.25):
 //
@@ -19,7 +19,7 @@
 //	_panic         8       32
 //	_defer         8       40
 //	m              8       48
-//	sched (gobuf)  48      56   (6 pointers: sp, pc, g, ctxt, ret, bp)
+//	sched (gobuf)  48      56   (6 pointers: sp, pc, g, ctxt, lr, bp - NO 'ret'!)
 //	syscallsp      8       104
 //	syscallpc      8       112
 //	syscallbp      8       120

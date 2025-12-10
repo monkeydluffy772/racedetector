@@ -6,7 +6,8 @@
 
 // Go 1.24 specific goid extraction.
 //
-// In Go 1.24, the gobuf struct is 48 bytes (6 pointers), placing goid at offset 152.
+// In Go 1.24, the gobuf struct is 56 bytes (7 pointers including 'ret'),
+// placing goid at offset 160 - same as Go 1.23.
 //
 // g struct layout (Go 1.24):
 //
@@ -18,22 +19,22 @@
 //	_panic         8       32
 //	_defer         8       40
 //	m              8       48
-//	sched (gobuf)  48      56   (6 pointers: sp, pc, g, ctxt, ret, bp)
-//	syscallsp      8       104
-//	syscallpc      8       112
-//	syscallbp      8       120
-//	stktopsp       8       128
-//	param          8       136
-//	atomicstatus   4       144
-//	stackLock      4       148
-//	goid           8       152  <- TARGET
+//	sched (gobuf)  56      56   (7 pointers: sp, pc, g, ctxt, ret, lr, bp)
+//	syscallsp      8       112
+//	syscallpc      8       120
+//	syscallbp      8       128
+//	stktopsp       8       136
+//	param          8       144
+//	atomicstatus   4       152
+//	stackLock      4       156
+//	goid           8       160  <- TARGET
 
 package api
 
 import "unsafe"
 
-// goidOffset for Go 1.24 is 152 bytes.
-const goidOffset = 152
+// goidOffset for Go 1.24 is 160 bytes (same as Go 1.23, gobuf still has 'ret' field).
+const goidOffset = 160
 
 // getg returns the current goroutine's g struct pointer.
 // Implemented in assembly (goid_amd64.s or goid_arm64.s).

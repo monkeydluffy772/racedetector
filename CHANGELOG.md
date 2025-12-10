@@ -9,19 +9,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.5.2] - 2025-12-10
+
+### Fixed
+
+- **Corrected goid offsets for all Go versions**: The `gobuf.ret` field was removed in
+  Go 1.25, changing the goid offset:
+  - Go 1.23: offset **160** (gobuf=56 bytes, 7 fields including `ret`)
+  - Go 1.24: offset **160** (gobuf=56 bytes, 7 fields including `ret`)
+  - Go 1.25: offset **152** (gobuf=48 bytes, 6 fields, `ret` removed)
+- Fixed `goid_go124.go` offset from incorrect 152 to correct **160**
+- Updated release workflow to use Go 1.25 (matches go.mod 1.24+ requirement)
+- Fixed `.golangci.yml` pattern for `goid_go*.go` files
+
+---
+
 ## [0.5.1] - 2025-12-10
 
 ### Fixed
 
-- **Version-specific goid offsets**: The `goid` field offset in Go's runtime `g` struct
-  differs between Go versions due to `gobuf` struct changes:
-  - Go 1.23: `gobuf` = 56 bytes → `goid` at offset **160**
-  - Go 1.24/1.25: `gobuf` = 48 bytes → `goid` at offset **152**
-- Replaced single `goid_fast.go` with version-specific files:
-  - `goid_go123.go` - offset 160 for Go 1.23
-  - `goid_go124.go` - offset 152 for Go 1.24
-  - `goid_go125.go` - offset 152 for Go 1.25
-- Fixes v0.5.0 release test failure on Go 1.23
+- **Version-specific goid files**: Replaced single `goid_fast.go` with version-specific:
+  - `goid_go123.go` - Go 1.23 support
+  - `goid_go124.go` - Go 1.24 support
+  - `goid_go125.go` - Go 1.25 support
+- Note: This release had incorrect offset for Go 1.24 (fixed in v0.5.2)
 
 ---
 
