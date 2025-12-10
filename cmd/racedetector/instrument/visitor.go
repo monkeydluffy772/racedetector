@@ -404,6 +404,28 @@ func (v *instrumentVisitor) extractReads(expr ast.Expr, stmt ast.Stmt) {
 			// Don't walk into Key (field name), only walk into Value
 			v.extractReads(e.Value, stmt)
 			return false // Don't continue walking - we handled it
+
+		case *ast.CompositeLit:
+			// Composite literal: Type{...} or []Type{...}
+			// Skip Type (it's a type name, not addressable), only walk into Elts
+			for _, elt := range e.Elts {
+				v.extractReads(elt, stmt)
+			}
+			return false // Don't continue walking - we handled it
+
+		case *ast.CallExpr:
+			// Function call or type conversion: func(args) or Type(expr)
+			// Skip Fun (could be function, method, or type - none are addressable)
+			// Only walk into Args
+			for _, arg := range e.Args {
+				v.extractReads(arg, stmt)
+			}
+			return false // Don't continue walking - we handled it
+
+		case *ast.IndexListExpr:
+			// Generic instantiation: Func[T, U](args)
+			// Skip entirely - cannot take address of generic function
+			return false
 		}
 		return true
 	})

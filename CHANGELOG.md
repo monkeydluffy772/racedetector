@@ -7,6 +7,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.5] - 2025-12-10
+
+### Hotfix: CompositeLit, CallExpr and Generic Functions
+
+This hotfix properly handles composite literals, function calls, and generic function instantiations.
+
+### Fixed
+
+- **Issue #9 (final fix): Type expressions in composite literals**
+  - `Surface (type) is not an expression` - type names in `Type{...}` were being instrumented
+  - Added CompositeLit handling in `extractReads()` - skip Type, only walk into Elts
+
+- **Function calls and type conversions**
+  - Skip Fun part of CallExpr (could be function, method, or type conversion)
+  - Only instrument the arguments
+
+- **Generic function instantiation**
+  - `cannot use generic function without instantiation` error
+  - Skip IndexListExpr entirely (generic type params like `Func[T, U]`)
+
+### Changed
+
+- **`extractReads()` now handles additional AST node types:**
+  - `*ast.CompositeLit` - skip Type, walk into Elts only
+  - `*ast.CallExpr` - skip Fun, walk into Args only
+  - `*ast.IndexListExpr` - skip entirely (generic instantiation)
+
+### Installation
+
+```bash
+go install github.com/kolkov/racedetector/cmd/racedetector@v0.4.5
+```
+
+---
+
 ## [0.4.4] - 2025-12-10
 
 ### Hotfix: Conservative SelectorExpr & Struct Literals
