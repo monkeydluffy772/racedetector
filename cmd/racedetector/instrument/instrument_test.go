@@ -808,6 +808,57 @@ func main() {
 	t.Logf("Instrumented output:\n%s", result.Code)
 }
 
+// TestInstrumentFile_MethodValue tests that method values are not instrumented.
+// Issue #9: Cannot take address of obj.Method.
+func TestInstrumentFile_MethodValue(t *testing.T) {
+	input := `package main
+
+import "bytes"
+
+func main() {
+	buf := bytes.NewBuffer(nil)
+	f := buf.Write
+	_ = f
+}
+`
+	result, err := InstrumentFile("test.go", input)
+	if err != nil {
+		t.Fatalf("InstrumentFile failed: %v", err)
+	}
+
+	// The instrumented code should not try to take address of method value.
+	if strings.Contains(result.Code, "&buf.Write") {
+		t.Errorf("Output contains invalid &buf.Write - should not take address of method value")
+	}
+
+	t.Logf("Instrumented output:\n%s", result.Code)
+}
+
+// TestInstrumentFile_StructFieldConservative tests that struct fields are handled safely.
+// We now skip ALL SelectorExpr for safety (may miss some races on struct fields).
+func TestInstrumentFile_StructFieldConservative(t *testing.T) {
+	input := `package main
+
+type Point struct {
+	X, Y int
+}
+
+func main() {
+	p := Point{X: 1, Y: 2}
+	v := p.X
+	_ = v
+}
+`
+	result, err := InstrumentFile("test.go", input)
+	if err != nil {
+		t.Fatalf("InstrumentFile failed: %v", err)
+	}
+
+	// With conservative approach, we skip p.X instrumentation
+	// This is a known limitation - we prioritize safety over completeness
+	t.Logf("Instrumented output:\n%s", result.Code)
+}
+
 func BenchmarkInstrumentFile(b *testing.B) {
 	input := `package main
 

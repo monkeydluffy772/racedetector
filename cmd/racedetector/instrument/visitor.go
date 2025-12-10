@@ -397,6 +397,13 @@ func (v *instrumentVisitor) extractReads(expr ast.Expr, stmt ast.Stmt) {
 				})
 				v.stats.ReadsInstrumented++
 			}
+
+		case *ast.KeyValueExpr:
+			// Struct literal field: Point{X: 1, Y: 2}
+			// Key is the field name (not a variable), Value is the actual expression
+			// Don't walk into Key (field name), only walk into Value
+			v.extractReads(e.Value, stmt)
+			return false // Don't continue walking - we handled it
 		}
 		return true
 	})
@@ -539,21 +546,21 @@ func shouldInstrument(expr ast.Expr) bool {
 		}
 	}
 
-	// Skip SelectorExpr that are package function calls (os.ReadFile, strconv.Atoi)
-	// We cannot take address of package-level functions
-	if sel, ok := expr.(*ast.SelectorExpr); ok {
-		// Check if X is a package identifier
-		if xIdent, ok := sel.X.(*ast.Ident); ok {
-			// If X has Obj and is a package, this is a package.Function call
-			if xIdent.Obj != nil && xIdent.Obj.Kind == ast.Pkg {
-				return false
-			}
-			// If X is an imported package name (common pattern: os, fmt, strconv, etc.)
-			// These don't have Obj set when parsed without type info
-			if isLikelyPackageName(xIdent.Name) {
-				return false
-			}
-		}
+	// Skip ALL SelectorExpr - too many non-addressable cases without type info:
+	// - Package functions: os.ReadFile, strconv.Atoi
+	// - Method values: obj.Method
+	// - Fields on return values: GetObj().Field (not addressable)
+	// - Method calls: result.String()
+	//
+	// Without full type information, we cannot reliably distinguish:
+	// - obj.Field (addressable if obj is a variable)
+	// - GetObj().Field (NOT addressable - return value)
+	// - obj.Method (NOT addressable - method value)
+	//
+	// Conservative approach: skip ALL SelectorExpr to avoid compilation errors.
+	// This may miss some race conditions on struct fields, but ensures safety.
+	if _, ok := expr.(*ast.SelectorExpr); ok {
+		return false
 	}
 
 	// Skip IndexExpr on maps - cannot take address of map element
@@ -572,33 +579,6 @@ func shouldInstrument(expr ast.Expr) bool {
 	}
 
 	return true
-}
-
-// isLikelyPackageName checks if an identifier looks like a standard library package name.
-// This is a heuristic for when AST doesn't have Obj info (parsed without type checking).
-func isLikelyPackageName(name string) bool {
-	// Common standard library packages
-	stdPackages := map[string]bool{
-		"fmt": true, "os": true, "io": true, "bufio": true,
-		"strings": true, "strconv": true, "bytes": true,
-		"path": true, "filepath": true,
-		"time": true, "math": true, "rand": true,
-		"sort": true, "sync": true, "atomic": true,
-		"context": true, "errors": true,
-		"encoding": true, "json": true, "xml": true,
-		"net": true, "http": true, "url": true,
-		"reflect": true, "unsafe": true, "runtime": true,
-		"testing": true, "log": true, "flag": true,
-		"regexp": true, "unicode": true,
-		"crypto": true, "hash": true,
-		"database": true, "sql": true,
-		"html": true, "template": true,
-		"image": true, "color": true,
-		"archive": true, "compress": true,
-		"debug": true, "go": true,
-		"syscall": true, "os/exec": true,
-	}
-	return stdPackages[name]
 }
 
 // trackSkipped tracks why an expression was skipped (for statistics).

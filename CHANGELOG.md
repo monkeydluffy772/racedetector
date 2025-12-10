@@ -7,6 +7,52 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.4] - 2025-12-10
+
+### Hotfix: Conservative SelectorExpr & Struct Literals
+
+This hotfix takes a more conservative approach to instrumentation, fixing remaining edge cases that caused compilation errors.
+
+### Fixed
+
+- **Issue #9 (continued): More SelectorExpr edge cases**
+  - Method values: `hub.GetAdapter`, `result.String`
+  - Return value fields: `GetGlobal().Hub`
+  - Package-qualified identifiers with non-stdlib packages
+  - Undefined identifiers in complex expressions
+
+- **Struct literal field names**
+  - Field names in struct literals (`Point{X: 1, Y: 2}`) were incorrectly treated as variables
+  - Added KeyValueExpr handling in `extractReads()` to skip field names
+  - Only the value expressions are now instrumented
+
+### Changed
+
+- **Skip ALL SelectorExpr** in `shouldInstrument()`
+  - Without full type information, too many non-addressable cases exist
+  - This is a trade-off: may miss some struct field race conditions
+  - Safer than breaking compilation on valid code
+
+- **Removed `isLikelyPackageName()`** - no longer needed with conservative approach
+
+- **Added KeyValueExpr handling** in `extractReads()`
+  - Key (field name) is skipped
+  - Value expression is still walked for instrumentation
+
+### Limitations
+
+- Struct field access via dot notation (`obj.Field`) is not instrumented
+- This reduces detection coverage but ensures correctness
+- Full type-checking integration planned for future release
+
+### Installation
+
+```bash
+go install github.com/kolkov/racedetector/cmd/racedetector@v0.4.4
+```
+
+---
+
 ## [0.4.3] - 2025-12-10
 
 ### Hotfix: Package Functions & Map Index Support
