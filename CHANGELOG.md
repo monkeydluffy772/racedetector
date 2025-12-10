@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.10] - 2025-12-10
+
+### Fix: Run go mod tidy in src directory
+
+This release fixes the missing go.sum entries for racedetector.
+
+### Fixed
+
+- **"missing go.sum entry for module providing package"**
+  - After adding racedetector require to src/go.mod, go.sum was outdated
+  - Now running `go mod tidy` in src/ directory to update go.sum
+
+### Installation
+
+```bash
+go install github.com/kolkov/racedetector/cmd/racedetector@v0.4.10
+```
+
+---
+
 ## [0.4.9] - 2025-12-10
 
 ### Fix: Add racedetector dependency to instrumented go.mod

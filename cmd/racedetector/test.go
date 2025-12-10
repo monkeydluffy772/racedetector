@@ -272,6 +272,12 @@ func instrumentTestSources(config *testConfig, workspace *workspace) error {
 		}
 	}
 
+	// Run go mod tidy in srcDir to update go.sum with racedetector dependency
+	tidyCmd := exec.Command("go", "mod", "tidy")
+	tidyCmd.Dir = workspace.srcDir
+	// Ignore errors - tidy may complain about missing imports that we'll resolve later
+	_ = tidyCmd.Run()
+
 	return nil
 }
 

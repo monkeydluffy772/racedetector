@@ -16,7 +16,7 @@ import (
 
 // Version is the current racedetector version for go.mod requires.
 // Update this when releasing new versions.
-const Version = "v0.4.9"
+const Version = "v0.4.10"
 
 // GetRuntimePackagePath returns the import path for the race detector runtime.
 //
