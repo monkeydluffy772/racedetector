@@ -426,6 +426,17 @@ func (v *instrumentVisitor) extractReads(expr ast.Expr, stmt ast.Stmt) {
 			// Generic instantiation: Func[T, U](args)
 			// Skip entirely - cannot take address of generic function
 			return false
+
+		case *ast.TypeAssertExpr:
+			// Type assertion: x.(Type)
+			// Skip Type (it's a type name), only walk into X
+			v.extractReads(e.X, stmt)
+			return false // Don't continue walking - we handled it
+
+		case *ast.FuncLit:
+			// Anonymous function: func() { ... }
+			// Don't walk into function body - separate scope
+			return false
 		}
 		return true
 	})
@@ -548,23 +559,28 @@ func shouldInstrument(expr ast.Expr) bool {
 		if isBuiltinIdent(ident.Name) {
 			return false
 		}
-		// Check AST object kind if available
-		// This catches user-defined functions, types, and package imports
-		if ident.Obj != nil {
-			switch ident.Obj.Kind {
-			case ast.Fun:
-				// Function identifier (e.g., parseSpec in "f := parseSpec")
-				// Cannot take address of function value
-				return false
-			case ast.Typ:
-				// Type identifier (e.g., MyType in "type MyType struct{}")
-				// Cannot take address of type
-				return false
-			case ast.Pkg:
-				// Package identifier (e.g., os in "os.ReadFile")
-				// Cannot take address of package
-				return false
-			}
+
+		// ULTRA-CONSERVATIVE: Only instrument if we're 100% sure it's a variable
+		// Without full type checking, ident.Obj is often nil for:
+		// - Functions defined in other files
+		// - Types defined in other packages
+		// - Package-level variables from other files
+		// - Generic type parameters
+		//
+		// We can only safely instrument when:
+		// 1. ident.Obj is not nil (parser resolved the symbol)
+		// 2. ident.Obj.Kind is ast.Var (it's definitely a variable)
+		//
+		// This may miss some race conditions, but avoids compilation errors.
+		if ident.Obj == nil {
+			// Cannot determine kind - skip to be safe
+			// This skips functions/types from other files/packages
+			return false
+		}
+
+		// Only instrument variables, skip everything else
+		if ident.Obj.Kind != ast.Var {
+			return false
 		}
 	}
 

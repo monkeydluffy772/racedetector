@@ -208,7 +208,7 @@ func ModFileOverlay(tempDir, sourceDir string) (string, error) {
 		content.WriteString(fmt.Sprintf("replace github.com/kolkov/racedetector => %s\n", projectRoot))
 	} else {
 		// Published mode (CI, installed via go install) - require published package
-		content.WriteString("require github.com/kolkov/racedetector v0.4.5\n")
+		content.WriteString("require github.com/kolkov/racedetector v0.4.6\n")
 	}
 
 	// Find and parse original project's go.mod to copy replace directives

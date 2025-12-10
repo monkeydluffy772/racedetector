@@ -7,6 +7,46 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.6] - 2025-12-10
+
+### Hotfix: Ultra-Conservative Identifier Handling
+
+This hotfix takes an ultra-conservative approach to identifier instrumentation to fix remaining edge cases.
+
+### Fixed
+
+- **Issue #9 (final): Comprehensive identifier filtering**
+  - `IsValidationError (func)` - functions from other files had nil Obj
+  - `commandBufferMarker (type)` - types from other packages had nil Obj
+  - `generic type ID without instantiation` - generic type parameters
+  - `undefined: val` - scope issues with identifiers
+
+### Changed
+
+- **Ultra-conservative Ident handling in `shouldInstrument()`**
+  - ONLY instrument identifiers with `ident.Obj != nil && ident.Obj.Kind == ast.Var`
+  - Skip ALL identifiers where we cannot confirm they are variables
+  - This eliminates false positives from functions, types, generics, etc.
+
+- **New AST handlers in `extractReads()`**
+  - `*ast.TypeAssertExpr` - skip Type, only walk into X
+  - `*ast.FuncLit` - skip anonymous function bodies (separate scope)
+
+### Limitations
+
+- Only local variables (same file) are instrumented
+- Package-level variables from other files may be missed
+- This is a trade-off for correctness over coverage
+- Full type-checking integration needed for complete coverage
+
+### Installation
+
+```bash
+go install github.com/kolkov/racedetector/cmd/racedetector@v0.4.6
+```
+
+---
+
 ## [0.4.5] - 2025-12-10
 
 ### Hotfix: CompositeLit, CallExpr and Generic Functions
