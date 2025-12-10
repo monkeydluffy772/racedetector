@@ -7,6 +7,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.7] - 2025-12-10
+
+### Feature: Internal Module Import Resolution
+
+This release fixes internal import resolution for multi-package modules.
+
+### Fixed
+
+- **Issue #10: Internal module imports not rewritten during instrumentation**
+  - Imports like `github.com/MODULE/subpackage` now resolve correctly
+  - Added `replace MODULE => ./src` directive to instrumented go.mod
+  - This allows internal packages to find each other in the temp workspace
+
+### Changed
+
+- **`ModFileOverlay()`** now adds replace directive for original module
+  - Reads module name from original go.mod via new `getModuleName()` function
+  - Skips adding replace for racedetector's own module (avoids conflicts)
+
+- **New function `getModuleName()`** - extracts module path from go.mod
+
+### Installation
+
+```bash
+go install github.com/kolkov/racedetector/cmd/racedetector@v0.4.7
+```
+
+---
+
 ## [0.4.6] - 2025-12-10
 
 ### Hotfix: Ultra-Conservative Identifier Handling

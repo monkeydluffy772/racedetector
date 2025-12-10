@@ -208,13 +208,24 @@ func ModFileOverlay(tempDir, sourceDir string) (string, error) {
 		content.WriteString(fmt.Sprintf("replace github.com/kolkov/racedetector => %s\n", projectRoot))
 	} else {
 		// Published mode (CI, installed via go install) - require published package
-		content.WriteString("require github.com/kolkov/racedetector v0.4.6\n")
+		content.WriteString("require github.com/kolkov/racedetector v0.4.7\n")
 	}
 
-	// Find and parse original project's go.mod to copy replace directives
+	// Find and parse original project's go.mod to:
+	// 1. Add replace directive for the original module → ./src (so internal imports work)
+	// 2. Copy existing replace directives from original go.mod
 	if sourceDir != "" {
 		originalGoMod := findOriginalGoMod(sourceDir)
 		if originalGoMod != "" {
+			// Get original module name and add replace directive
+			originalModuleName := getModuleName(originalGoMod)
+			// Don't add replace for our own module (racedetector) - it's already handled above
+			if originalModuleName != "" && originalModuleName != "github.com/kolkov/racedetector" {
+				content.WriteString("\n// Replace original module with instrumented sources:\n")
+				content.WriteString(fmt.Sprintf("replace %s => ./src\n", originalModuleName))
+			}
+
+			// Copy existing replace directives from original go.mod
 			replaceDirectives := extractReplaceDirectives(originalGoMod)
 			if replaceDirectives != "" {
 				content.WriteString("\n// Replace directives from original go.mod:\n")
@@ -230,6 +241,31 @@ func ModFileOverlay(tempDir, sourceDir string) (string, error) {
 	}
 
 	return overlayPath, nil
+}
+
+// getModuleName reads a go.mod file and returns the module name.
+//
+// Parameters:
+//   - goModPath: Path to the go.mod file to parse
+//
+// Returns:
+//   - Module name (e.g., "github.com/gogpu/wgpu") or empty string on error
+func getModuleName(goModPath string) string {
+	data, err := os.ReadFile(goModPath)
+	if err != nil {
+		return ""
+	}
+
+	modFile, err := modfile.Parse(goModPath, data, nil)
+	if err != nil {
+		return ""
+	}
+
+	if modFile.Module == nil {
+		return ""
+	}
+
+	return modFile.Module.Mod.Path
 }
 
 // extractReplaceDirectives reads a go.mod file and extracts replace directives,
