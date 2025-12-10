@@ -7,6 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.9] - 2025-12-10
+
+### Fix: Add racedetector dependency to instrumented go.mod
+
+This release fixes the missing racedetector dependency in the instrumented module.
+
+### Fixed
+
+- **"no required module provides package github.com/kolkov/racedetector/race"**
+  - Instrumented code imports `racedetector/race`, but src/go.mod (copy of original) didn't have this dependency
+  - Now appending `require github.com/kolkov/racedetector VERSION` to src/go.mod
+
+### Changed
+
+- **Added `runtime.Version` constant** for consistent version management
+- **`instrumentTestSources()`** now adds racedetector require to src/go.mod
+- **`ModFileOverlay()`** now uses `runtime.Version` constant
+
+### Installation
+
+```bash
+go install github.com/kolkov/racedetector/cmd/racedetector@v0.4.9
+```
+
+---
+
 ## [0.4.8] - 2025-12-10
 
 ### Hotfix: Copy go.mod to instrumented sources

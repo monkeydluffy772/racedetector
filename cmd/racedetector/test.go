@@ -247,14 +247,18 @@ func instrumentTestSources(config *testConfig, workspace *workspace) error {
 		}
 	}
 
-	// Copy go.mod to srcDir (required for replace directive to work)
+	// Copy go.mod to srcDir and add racedetector dependency
 	// The replace directive points to ./src, which must be a valid module
+	// AND instrumented code imports github.com/kolkov/racedetector/race
 	goModSrc := filepath.Join(config.workDir, "go.mod")
 	if _, err := os.Stat(goModSrc); err == nil {
 		goModDst := filepath.Join(workspace.srcDir, "go.mod")
 		data, err := os.ReadFile(goModSrc)
 		if err == nil {
-			_ = os.WriteFile(goModDst, data, 0644)
+			// Append racedetector require to the go.mod
+			modContent := string(data)
+			modContent += fmt.Sprintf("\nrequire github.com/kolkov/racedetector %s\n", runtime.Version)
+			_ = os.WriteFile(goModDst, []byte(modContent), 0644)
 		}
 	}
 

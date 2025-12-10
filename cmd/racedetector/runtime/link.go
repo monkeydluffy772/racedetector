@@ -14,6 +14,10 @@ import (
 	"golang.org/x/mod/modfile"
 )
 
+// Version is the current racedetector version for go.mod requires.
+// Update this when releasing new versions.
+const Version = "v0.4.9"
+
 // GetRuntimePackagePath returns the import path for the race detector runtime.
 //
 // This is the package that instrumented code will import to access
@@ -208,7 +212,7 @@ func ModFileOverlay(tempDir, sourceDir string) (string, error) {
 		content.WriteString(fmt.Sprintf("replace github.com/kolkov/racedetector => %s\n", projectRoot))
 	} else {
 		// Published mode (CI, installed via go install) - require published package
-		content.WriteString("require github.com/kolkov/racedetector v0.4.8\n")
+		content.WriteString(fmt.Sprintf("require github.com/kolkov/racedetector %s\n", Version))
 	}
 
 	// Find and parse original project's go.mod to:
